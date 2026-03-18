@@ -1,10 +1,7 @@
 
-openai-whisper
 edge-tts
-sounddevice
 scipy
 numpy
-pygame
 groq
 python-dotenv
 streamlit
