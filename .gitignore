@@ -1,0 +1,25 @@
+# API keys - NEVER push this
+.env
+
+# Database (each deployment creates its own)
+finbot.db
+
+# Audio temp files
+response.mp3
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environment
+venv/
+.venv/
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,13 @@
+
+openai-whisper
+edge-tts
+sounddevice
+scipy
+numpy
+pygame
+groq
+python-dotenv
+streamlit
+plotly
+pandas
+streamlit-mic-recorder
