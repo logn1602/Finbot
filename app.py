@@ -42,10 +42,14 @@ st.markdown("""
         font-family: 'Inter', sans-serif;
     }
 
-    /* ---- Sidebar styling ---- */
+    /* ---- Sidebar styling (resizable but never fully closed) ---- */
     section[data-testid="stSidebar"] {
         background: linear-gradient(180deg, #0f0f1a 0%, #1a1a2e 100%);
         border-right: 1px solid rgba(255,255,255,0.05);
+        min-width: 200px !important;
+    }
+    section[data-testid="stSidebar"] button[kind="header"] {
+        display: none !important;
     }
 
     /* ---- Metric cards ---- */
@@ -203,8 +207,8 @@ st.markdown("""
 
     /* ---- Hide Streamlit default ---- */
     #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
+    footer {visibility: hidden;
+            }
 </style>
 """, unsafe_allow_html=True)
 
@@ -318,8 +322,8 @@ with st.sidebar:
 
     st.markdown('<div class="sidebar-header">📊 Overview</div>', unsafe_allow_html=True)
     col1, col2 = st.columns(2)
-    col1.metric("This Month", f"₹{total_month:,.0f}")
-    col2.metric("Today", f"₹{total_today:,.0f}")
+    col1.metric("This Month", f"${total_month:,.0f}")
+    col2.metric("Today", f"${total_today:,.0f}")
 
     # --- Budget Status ---
     st.markdown('<div class="sidebar-header">🎯 Budget Status</div>', unsafe_allow_html=True)
@@ -356,8 +360,8 @@ with st.sidebar:
                                     transition: width 0.5s ease;"></div>
                     </div>
                     <div style="display: flex; justify-content: space-between; margin-top: 3px;">
-                        <span style="font-size: 0.7rem; color: #64748b;">₹{b['spent']:,.0f} spent</span>
-                        <span style="font-size: 0.7rem; color: #64748b;">₹{b['budget']:,.0f} limit</span>
+                        <span style="font-size: 0.7rem; color: #64748b;">${b['spent']:,.0f} spent</span>
+                        <span style="font-size: 0.7rem; color: #64748b;">${b['budget']:,.0f} limit</span>
                     </div>
                 </div>
             """, unsafe_allow_html=True)
@@ -373,7 +377,7 @@ with st.sidebar:
             labels=cats, values=spent_vals,
             hole=0.6, marker=dict(colors=colors[:len(cats)]),
             textinfo="percent", textfont_size=11,
-            hovertemplate="<b>%{label}</b><br>₹%{value:,.0f}<br>%{percent}<extra></extra>"
+            hovertemplate="<b>%{label}</b><br>$%{value:,.0f}<br>%{percent}<extra></extra>"
         )])
         fig_donut.update_layout(
             height=220, margin=dict(l=10, r=10, t=10, b=10),
@@ -405,7 +409,7 @@ with st.sidebar:
             mode="lines+markers+text",
             line=dict(color="#6366f1", width=2.5, shape="spline"),
             marker=dict(size=8, color="#6366f1", line=dict(width=2, color="#1a1a2e")),
-            text=[f"₹{v:,.0f}" for v in df["total"]],
+            text=[f"${v:,.0f}" for v in df["total"]],
             textposition="top center",
             textfont=dict(size=9, color="#a5b4fc"),
             fill="tozeroy",
