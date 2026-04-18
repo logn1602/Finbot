@@ -113,6 +113,15 @@ if "user" not in st.session_state or not st.session_state.get("user"):
     show_auth_page()
     st.stop()
 
+# ── Browser timezone detection ───────────────────────────────
+from streamlit_js_eval import streamlit_js_eval
+if "user_timezone" not in st.session_state:
+    tz = streamlit_js_eval(
+        js_expressions="Intl.DateTimeFormat().resolvedOptions().timeZone",
+        key="get_timezone"
+    )
+    st.session_state.user_timezone = tz if tz else "America/New_York"
+
 # ============================================================
 # IMPORTS (only runs if logged in)
 # ============================================================
