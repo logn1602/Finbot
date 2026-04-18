@@ -23,3 +23,6 @@ venv/
 # OS files
 .DS_Store
 Thumbs.db
+
+Streamlit files
+.streamlit/secrets.toml
