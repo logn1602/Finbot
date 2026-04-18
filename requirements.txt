@@ -8,3 +8,4 @@ streamlit
 plotly
 pandas
 streamlit-mic-recorder
+supabase>=2.0.0
