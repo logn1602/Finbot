@@ -61,6 +61,16 @@ class ExpenseTracker:
                   .execute().data)
         return rows
 
+    def get_expenses(self, start_date: str = None, end_date: str = None):
+        """Get expenses filtered by date range."""
+        db = get_db()
+        q = db.table("expenses").select("*").eq("user_id", get_uid())
+        if start_date:
+            q = q.gte("date", start_date)
+        if end_date:
+            q = q.lte("date", end_date)
+        return q.order("date", desc=True).execute().data
+
     def get_expenses_by_period(self, days=30):
         start_date = (now_local() - timedelta(days=days)).strftime("%Y-%m-%d")
         db = get_db()
@@ -93,7 +103,7 @@ class ExpenseTracker:
                   .execute().data)
         daily = {}
         for r in rows:
-            d = r["date"]
+            d = str(r["date"])
             daily[d] = daily.get(d, 0) + r["amount"]
         return [{"date": d, "total": t} for d, t in sorted(daily.items())]
 
@@ -129,15 +139,15 @@ class BudgetAnalyzer:
 
     def get_budget_status(self):
         now = now_local()
-        first_of_month = now.replace(day=1).strftime("%Y-%m-%d")
         days_passed = now.day
+        start_of_month = now.replace(day=1).strftime("%Y-%m-%d")
 
-        rows = self.tracker.get_expenses_by_period(days=30)
+        # Use get_expenses with start_of_month for accurate monthly data
+        rows = self.tracker.get_expenses(start_date=start_of_month)
         spending_map = {}
         for r in rows:
-            if r["date"] >= first_of_month:
-                cat = r["category"]
-                spending_map[cat] = spending_map.get(cat, 0) + r["amount"]
+            cat = r["category"]
+            spending_map[cat] = spending_map.get(cat, 0) + r["amount"]
 
         budgets = self.get_budgets()
         status = []

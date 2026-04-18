@@ -4,7 +4,6 @@ Main application with Supabase auth + persistent storage.
 """
 
 import streamlit as st
-import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
 from datetime import datetime
@@ -22,7 +21,7 @@ st.set_page_config(
 )
 
 # ============================================================
-# AUTH GATE — must happen before any other imports that need DB
+# AUTH GATE
 # ============================================================
 from auth.auth import login, signup, logout, seed_default_budgets
 
@@ -64,6 +63,8 @@ def show_auth_page():
                         st.session_state.user = session.user.email
                         st.session_state.user_id = session.user.id
                         st.session_state.access_token = session.access_token
+                        # Seed budgets on every login (safe — skips existing)
+                        seed_default_budgets(session.user.id, session.access_token)
                         from finance.database import ChatHistory
                         ch = ChatHistory()
                         history = ch.load_history()
@@ -92,7 +93,6 @@ def show_auth_page():
                     if err:
                         st.error(err)
                     else:
-                        # Need a temp session to seed budgets
                         temp_session, _ = login(new_email, new_pass)
                         if temp_session:
                             seed_default_budgets(temp_session.user.id, temp_session.access_token)
@@ -246,7 +246,6 @@ def init_brain():
 
 brain = init_brain()
 
-# Per-user instances (not cached — each user needs their own)
 tracker = ExpenseTracker()
 analyzer = BudgetAnalyzer()
 chat_history = ChatHistory()
@@ -282,7 +281,6 @@ def process_user_input(user_text: str, language: str = None) -> dict:
                 f"I just logged an expense of {amount} in {category}. Give me a quick update.",
                 updated_context, language=detected_lang
             )
-            # Save to DB
             chat_history.save_message("user", user_text)
             chat_history.save_message("assistant", response)
             return {"response": response, "language": detected_lang}
@@ -301,7 +299,6 @@ def process_user_input(user_text: str, language: str = None) -> dict:
             chat_history.save_message("assistant", response)
             return {"response": response, "language": detected_lang}
 
-    # Save for all other intents
     chat_history.save_message("user", user_text)
     chat_history.save_message("assistant", result["response"])
     return {"response": result["response"], "language": detected_lang}
@@ -327,13 +324,11 @@ with st.sidebar:
         </div>
     """, unsafe_allow_html=True)
 
-    # User info + logout
     st.markdown(f'<div class="user-pill">👤 {st.session_state.user}</div>', unsafe_allow_html=True)
     if st.button("🚪 Logout", use_container_width=True):
         logout()
         st.rerun()
 
-    # --- Overview Metrics ---
     total_month = tracker.get_total_spent(days=30)
     total_today_expenses = tracker.get_today_expenses()
     total_today = sum(e["amount"] for e in total_today_expenses)
@@ -343,14 +338,12 @@ with st.sidebar:
     col1.metric("This Month", f"${total_month:,.0f}")
     col2.metric("Today", f"${total_today:,.0f}")
 
-    # --- Budget Status ---
     st.markdown('<div class="sidebar-header">🎯 Budget Status</div>', unsafe_allow_html=True)
     budget_status = analyzer.get_budget_status()
     active_budgets = [b for b in budget_status if b["spent"] > 0]
 
     if active_budgets:
         for b in active_budgets:
-            pct = min(b["percentage"], 100)
             if b["status"] == "over":
                 bar_color, badge_class, badge_text = "#ef4444", "badge-over", "OVER"
             elif b["status"] == "warning":
@@ -378,7 +371,6 @@ with st.sidebar:
                 </div>
             """, unsafe_allow_html=True)
 
-        # Category donut chart
         st.markdown('<div class="sidebar-header">📈 Category Breakdown</div>', unsafe_allow_html=True)
         cats = [b["category"].title() for b in active_budgets]
         spent_vals = [b["spent"] for b in active_budgets]
@@ -407,7 +399,6 @@ with st.sidebar:
             </div>
         """, unsafe_allow_html=True)
 
-    # --- 7-Day Trend ---
     st.markdown('<div class="sidebar-header">📉 7-Day Trend</div>', unsafe_allow_html=True)
     daily = tracker.get_daily_totals(days=7)
     if daily:
@@ -438,7 +429,6 @@ with st.sidebar:
     else:
         st.caption("No data for the past 7 days yet.")
 
-    # --- Insights ---
     st.markdown('<div class="sidebar-header">💡 Smart Insights</div>', unsafe_allow_html=True)
     insights = analyzer.get_spending_insights()
     for insight in insights:
@@ -464,17 +454,14 @@ st.markdown("""
     <p class="subtitle">Your AI Financial Advisor — Talk or Type in any language!</p>
 """, unsafe_allow_html=True)
 
-# Display chat history
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
 
-# Play pending audio after chat renders
 if st.session_state.pending_audio and os.path.exists(st.session_state.pending_audio):
     st.audio(st.session_state.pending_audio, autoplay=True)
     st.session_state.pending_audio = None
 
-# --- Voice Input ---
 st.markdown('<div class="mic-area">', unsafe_allow_html=True)
 col_mic, col_mic_label = st.columns([1, 4])
 with col_mic:
@@ -502,7 +489,6 @@ if audio_data and audio_data.get("bytes"):
         else:
             st.warning("Couldn't catch that. Try speaking louder or closer to your mic.")
 
-# --- Text Input ---
 if user_text := st.chat_input("💬 Type a message... (e.g., 'I spent 300 on lunch')"):
     st.session_state.messages.append({"role": "user", "content": user_text})
     with st.chat_message("user"):
@@ -516,7 +502,6 @@ if user_text := st.chat_input("💬 Type a message... (e.g., 'I spent 300 on lun
     st.session_state.pending_audio = audio_path
     st.rerun()
 
-# --- Quick Actions ---
 st.divider()
 st.markdown('<div class="quick-actions">', unsafe_allow_html=True)
 quick_cols = st.columns(4)
