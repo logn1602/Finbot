@@ -1,4 +1,5 @@
 from datetime import datetime, date, timedelta
+from zoneinfo import ZoneInfo
 import streamlit as st
 from auth.auth import get_authenticated_client
 
@@ -12,6 +13,15 @@ def get_db():
 
 def get_uid():
     return st.session_state.user_id
+
+def now_local():
+    """Returns current datetime in user's browser timezone."""
+    tz = st.session_state.get("user_timezone", "UTC")
+    return datetime.now(ZoneInfo(tz))
+
+def today_local():
+    """Returns today's date string in user's browser timezone."""
+    return now_local().strftime("%Y-%m-%d")
 
 
 # ============================================================
@@ -30,18 +40,18 @@ class ExpenseTracker:
             "amount": amount,
             "category": category.lower(),
             "description": description,
-            "date": date or datetime.now().strftime("%Y-%m-%d")
+            "date": date or today_local()
         }).execute()
         return {
             "amount": amount,
             "category": category,
             "description": description,
-            "date": date,
+            "date": date or today_local(),
             "status": "recorded"
         }
 
     def get_today_expenses(self):
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = today_local()
         db = get_db()
         rows = (db.table("expenses")
                   .select("*")
@@ -52,7 +62,7 @@ class ExpenseTracker:
         return rows
 
     def get_expenses_by_period(self, days=30):
-        start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        start_date = (now_local() - timedelta(days=days)).strftime("%Y-%m-%d")
         db = get_db()
         rows = (db.table("expenses")
                   .select("*")
@@ -74,7 +84,7 @@ class ExpenseTracker:
         return totals
 
     def get_daily_totals(self, days=7):
-        start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        start_date = (now_local() - timedelta(days=days)).strftime("%Y-%m-%d")
         db = get_db()
         rows = (db.table("expenses")
                   .select("date, amount")
@@ -118,7 +128,7 @@ class BudgetAnalyzer:
         }, on_conflict="user_id,category").execute()
 
     def get_budget_status(self):
-        now = datetime.now()
+        now = now_local()
         first_of_month = now.replace(day=1).strftime("%Y-%m-%d")
         days_passed = now.day
 
@@ -221,7 +231,7 @@ class IncomeTracker:
             "user_id": get_uid(),
             "amount": amount,
             "source": source,
-            "date": income_date or datetime.now().strftime("%Y-%m-%d")
+            "date": income_date or today_local()
         }).execute()
 
 
