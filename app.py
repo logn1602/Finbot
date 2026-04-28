@@ -8,6 +8,7 @@ import plotly.graph_objects as go
 import pandas as pd
 from datetime import datetime
 import os
+import time
 from streamlit_mic_recorder import mic_recorder
 
 # ============================================================
@@ -257,14 +258,21 @@ if "messages" not in st.session_state:
     ]
 if "pending_audio" not in st.session_state:
     st.session_state.pending_audio = None
+if "last_latency" not in st.session_state:
+    st.session_state.last_latency = None
+if "pending_expense" not in st.session_state:
+    st.session_state.pending_expense = None  # holds {amount, category, description, language, stt_ms}
 
 # ============================================================
 # CORE LOGIC
 # ============================================================
 
-def process_user_input(user_text: str, language: str = None) -> dict:
+def process_user_input(user_text: str, language: str = None, stt_ms: float = 0.0) -> dict:
+    t0 = time.perf_counter()
     financial_context = analyzer.generate_context_for_llm()
     result = brain.process_message(user_text, financial_context, language=language)
+    llm_ms = (time.perf_counter() - t0) * 1000
+
     intent = result["intent"]
     intent_type = intent.get("intent", "get_advice")
     entities = intent.get("entities", {})
@@ -275,15 +283,23 @@ def process_user_input(user_text: str, language: str = None) -> dict:
         category = entities.get("category", "other")
         description = entities.get("description", "")
         if amount and float(amount) > 0:
-            tracker.add_expense(float(amount), category, description)
-            updated_context = analyzer.generate_context_for_llm()
-            response = brain.generate_response(
-                f"I just logged an expense of {amount} in {category}. Give me a quick update.",
-                updated_context, language=detected_lang
+            # Stash for confirmation — don't write to DB yet
+            st.session_state.pending_expense = {
+                "amount": float(amount),
+                "category": category,
+                "description": description,
+                "language": detected_lang,
+                "stt_ms": stt_ms,
+                "llm_ms": llm_ms,
+            }
+            confirm_msg = (
+                f"Got it — **${float(amount):,.0f}** on **{category}**"
+                + (f" ({description})" if description else "")
+                + ". Shall I log that? ✅ / ❌"
             )
             chat_history.save_message("user", user_text)
-            chat_history.save_message("assistant", response)
-            return {"response": response, "language": detected_lang}
+            chat_history.save_message("assistant", confirm_msg)
+            return {"response": confirm_msg, "language": detected_lang, "stt_ms": stt_ms, "llm_ms": llm_ms}
 
     elif intent_type == "set_budget":
         amount = entities.get("amount")
@@ -297,16 +313,30 @@ def process_user_input(user_text: str, language: str = None) -> dict:
             )
             chat_history.save_message("user", user_text)
             chat_history.save_message("assistant", response)
-            return {"response": response, "language": detected_lang}
+            return {"response": response, "language": detected_lang, "stt_ms": stt_ms, "llm_ms": llm_ms}
 
     chat_history.save_message("user", user_text)
     chat_history.save_message("assistant", result["response"])
-    return {"response": result["response"], "language": detected_lang}
+    return {"response": result["response"], "language": detected_lang, "stt_ms": stt_ms, "llm_ms": llm_ms}
 
 
-def generate_audio(response_text: str, language: str = "en") -> str:
+def generate_audio(response_text: str, language: str = "en") -> tuple[str, float]:
     tts = init_tts()
-    return tts.generate_file(response_text, language=language, output_path="response.mp3")
+    t0 = time.perf_counter()
+    path = tts.generate_file(response_text, language=language, output_path="response.mp3")
+    tts_ms = (time.perf_counter() - t0) * 1000
+    return path, tts_ms
+
+
+def _latency_caption(stt_ms: float, llm_ms: float, tts_ms: float) -> str:
+    total_ms = stt_ms + llm_ms + tts_ms
+    parts = []
+    if stt_ms > 0:
+        parts.append(f"STT {stt_ms/1000:.1f}s")
+    parts.append(f"LLM {llm_ms/1000:.1f}s")
+    parts.append(f"TTS {tts_ms/1000:.1f}s")
+    parts.append(f"total {total_ms/1000:.1f}s")
+    return "⚡ " + " · ".join(parts)
 
 
 # ============================================================
@@ -460,7 +490,35 @@ for msg in st.session_state.messages:
 
 if st.session_state.pending_audio and os.path.exists(st.session_state.pending_audio):
     st.audio(st.session_state.pending_audio, autoplay=True)
+    if st.session_state.last_latency:
+        st.caption(st.session_state.last_latency)
+        st.session_state.last_latency = None
     st.session_state.pending_audio = None
+
+# ── Expense confirmation UI ────────────────────────────────────
+if st.session_state.pending_expense:
+    exp = st.session_state.pending_expense
+    col_yes, col_no, _ = st.columns([1, 1, 4])
+    if col_yes.button("✅ Yes, log it", use_container_width=True, type="primary"):
+        tracker.add_expense(exp["amount"], exp["category"], exp["description"])
+        updated_context = analyzer.generate_context_for_llm()
+        response = brain.generate_response(
+            f"I just logged an expense of {exp['amount']} in {exp['category']}. Give me a quick update.",
+            updated_context, language=exp["language"]
+        )
+        chat_history.save_message("assistant", response)
+        audio_path, tts_ms = generate_audio(response, language=exp["language"])
+        st.session_state.messages.append({"role": "assistant", "content": response})
+        st.session_state.last_latency = _latency_caption(exp["stt_ms"], exp["llm_ms"], tts_ms)
+        st.session_state.pending_audio = audio_path
+        st.session_state.pending_expense = None
+        st.rerun()
+    if col_no.button("❌ Cancel", use_container_width=True):
+        cancel_msg = "No problem, I won't log that."
+        chat_history.save_message("assistant", cancel_msg)
+        st.session_state.messages.append({"role": "assistant", "content": cancel_msg})
+        st.session_state.pending_expense = None
+        st.rerun()
 
 st.markdown('<div class="mic-area">', unsafe_allow_html=True)
 col_mic, col_mic_label = st.columns([1, 4])
@@ -476,14 +534,17 @@ st.markdown('</div>', unsafe_allow_html=True)
 if audio_data and audio_data.get("bytes"):
     with st.spinner("🧠 Transcribing & thinking..."):
         stt = init_stt()
+        t_stt = time.perf_counter()
         stt_result = stt.transcribe_bytes(audio_data["bytes"])
+        stt_ms = (time.perf_counter() - t_stt) * 1000
         if stt_result["text"]:
             user_text = stt_result["text"]
             detected_lang = stt_result["language"]
             st.session_state.messages.append({"role": "user", "content": user_text})
-            result = process_user_input(user_text, language=detected_lang)
+            result = process_user_input(user_text, language=detected_lang, stt_ms=stt_ms)
+            audio_path, tts_ms = generate_audio(result["response"], language=result["language"])
             st.session_state.messages.append({"role": "assistant", "content": result["response"]})
-            audio_path = generate_audio(result["response"], language=result["language"])
+            st.session_state.last_latency = _latency_caption(stt_ms, result["llm_ms"], tts_ms)
             st.session_state.pending_audio = audio_path
             st.rerun()
         else:
@@ -496,9 +557,10 @@ if user_text := st.chat_input("💬 Type a message... (e.g., 'I spent 300 on lun
     with st.chat_message("assistant"):
         with st.spinner("🧠 Thinking..."):
             result = process_user_input(user_text)
+            audio_path, tts_ms = generate_audio(result["response"], language=result["language"])
             st.write(result["response"])
+            st.caption(_latency_caption(0, result["llm_ms"], tts_ms))
     st.session_state.messages.append({"role": "assistant", "content": result["response"]})
-    audio_path = generate_audio(result["response"], language=result["language"])
     st.session_state.pending_audio = audio_path
     st.rerun()
 
@@ -518,8 +580,9 @@ for i, col in enumerate(quick_cols):
         st.session_state.messages.append({"role": "user", "content": full_prompt})
         with st.spinner("🧠 Thinking..."):
             result = process_user_input(full_prompt)
+            audio_path, tts_ms = generate_audio(result["response"], language=result["language"])
         st.session_state.messages.append({"role": "assistant", "content": result["response"]})
-        audio_path = generate_audio(result["response"], language=result["language"])
+        st.session_state.last_latency = _latency_caption(0, result["llm_ms"], tts_ms)
         st.session_state.pending_audio = audio_path
         st.rerun()
 st.markdown('</div>', unsafe_allow_html=True)
