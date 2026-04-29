@@ -111,6 +111,24 @@ class ExpenseTracker:
         rows = self.get_expenses_by_period(days=days)
         return sum(r["amount"] for r in rows)
 
+    def undo_last_expense(self) -> dict | None:
+        """
+        Delete the most recently inserted expense for the current user.
+        Returns the deleted expense dict, or None if there was nothing to undo.
+        """
+        db = get_db()
+        rows = (db.table("expenses")
+                  .select("*")
+                  .eq("user_id", get_uid())
+                  .order("created_at", desc=True)
+                  .limit(1)
+                  .execute().data)
+        if not rows:
+            return None
+        expense = rows[0]
+        db.table("expenses").delete().eq("id", expense["id"]).execute()
+        return expense
+
 
 # ============================================================
 # BUDGET ANALYZER

@@ -89,6 +89,7 @@ RULES:
 - Use $ for all currency amounts (unless user specifies otherwise)
 - NEVER say "as an AI" — stay in character
 - NEVER respond in English if the user spoke in another language
+- NEVER use markdown formatting. No asterisks, no backticks, no bullet points with - or *, no # headers. Write plain conversational sentences only.
 
 {financial_context}""")
 

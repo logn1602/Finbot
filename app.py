@@ -1,87 +1,183 @@
 """
-FinBot - AI Financial Advisor Voice Assistant
-Main application with Supabase auth + persistent storage.
+FinBot — AI Voice Financial Assistant
+Premium dark UI with warm gold accent, custom chat bubbles, hero stats.
 """
 
-import streamlit as st
-import plotly.graph_objects as go
-import pandas as pd
-from datetime import datetime
+import html
 import os
+import re
 import time
+
+import pandas as pd
+import plotly.graph_objects as go
+import streamlit as st
 from streamlit_mic_recorder import mic_recorder
 
-# ============================================================
-# PAGE CONFIG (must be first)
-# ============================================================
+# ── Page config (must be first Streamlit call) ─────────────────
 st.set_page_config(
-    page_title="FinBot - AI Financial Advisor",
+    page_title="FinBot",
     page_icon="💰",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
-# ============================================================
-# AUTH GATE
-# ============================================================
-from auth.auth import login, signup, logout, seed_default_budgets
+# ── Auth gate ──────────────────────────────────────────────────
+from auth.auth import login, logout, seed_default_budgets, signup
+from styles.styles import get_global_css
+from styles.tokens import (
+    ACCENT, BG, BORDER, BORDER_STRONG, DANGER, ON_ACCENT,
+    SUCCESS, SURFACE, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, WARNING,
+)
 
-def show_auth_page():
-    st.markdown("""
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-        .stApp { font-family: 'Inter', sans-serif; }
-        #MainMenu {visibility: hidden;} footer {visibility: hidden;}
-    </style>
-    """, unsafe_allow_html=True)
+DEBUG = os.getenv("FINBOT_DEBUG", "0") == "1"
 
-    col1, col2, col3 = st.columns([1, 1.2, 1])
-    with col2:
-        st.markdown("""
-            <div style='text-align:center; padding: 3rem 0 2rem'>
-                <span style='font-size: 4rem'>💰</span>
-                <h1 style='background: linear-gradient(135deg, #6366f1, #a78bfa, #f472b6);
-                            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-                            font-size: 2.5rem; margin: 0.5rem 0 0'>FinBot</h1>
-                <p style='color: #94a3b8; font-size: 1rem; margin-top: 0.3rem'>
-                    Your AI Financial Advisor
-                </p>
+
+# ── Helpers ────────────────────────────────────────────────────
+
+def strip_markdown(text: str) -> str:
+    """Remove markdown syntax that breaks the custom HTML chat UI."""
+    text = re.sub(r'`+([^`]*)`+', r'\1', text)          # backticks
+    text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)       # bold
+    text = re.sub(r'\*([^*]+)\*', r'\1', text)           # italic
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)  # headers
+    text = re.sub(r'^[-*]\s+', '', text, flags=re.MULTILINE)    # bullets
+    return text.strip()
+
+
+# Language pill labels: script character + English name
+LANG_LABELS = {
+    "hi": "हि Hindi",     "ta": "த Tamil",      "te": "తె Telugu",
+    "bn": "বাং Bengali",  "mr": "म Marathi",    "gu": "ગુ Gujarati",
+    "kn": "ಕ Kannada",    "ml": "മ Malayalam",  "pa": "ਪੰ Punjabi",
+    "ur": "اردو Urdu",    "es": "ES Spanish",   "fr": "FR French",
+    "de": "DE German",    "zh": "中 Chinese",   "ja": "日 Japanese",
+    "ko": "한 Korean",    "ar": "عر Arabic",    "pt": "PT Portuguese",
+    "ru": "РУ Russian",   "it": "IT Italian",
+}
+
+
+def _category_breakdown_html(budget_status: list) -> str:
+    """Render the inline budget-breakdown table as an HTML string."""
+    active = [b for b in budget_status if b["budget"] > 0]
+    if not active:
+        return "<p style='color:var(--text-tertiary);font-size:0.82rem'>No budget data yet.</p>"
+
+    rows = []
+    for b in active:
+        pct = min(b["percentage"], 100)
+        if b["status"] == "over":
+            badge_cls, bar_color = "fb-badge-danger",  DANGER
+        elif b["status"] == "warning":
+            badge_cls, bar_color = "fb-badge-warning", WARNING
+        else:
+            badge_cls, bar_color = "fb-badge-ok",      SUCCESS
+
+        badge_text = {"over": "OVER", "warning": "WARN", "ok": "OK"}[b["status"]]
+        rows.append(f"""
+        <div class="fb-category-row">
+            <span class="fb-cat-name">{b['category']}</span>
+            <span class="fb-cat-amounts">${b['spent']:,.0f} / ${b['budget']:,.0f}</span>
+            <span class="fb-status-badge {badge_cls}">{badge_text}</span>
+            <span class="fb-cat-pct">{b['percentage']:.0f}%</span>
+            <div class="fb-cat-bar-wrap">
+                <div class="fb-cat-bar-fill" style="width:{pct}%;background:{bar_color}"></div>
             </div>
+        </div>""")
+
+    return f"""
+    <div class="fb-breakdown-wrap">
+        <div class="fb-breakdown-title">Budget breakdown — this month</div>
+        {''.join(rows)}
+    </div>"""
+
+
+def _render_chat(messages: list) -> None:
+    """Render all chat messages as custom HTML bubbles in one block."""
+    parts = ['<div class="fb-chat-wrap">']
+    for msg in messages:
+        content = html.escape(strip_markdown(msg["content"]))
+        # Preserve line breaks
+        content = content.replace("\n", "<br>")
+
+        if msg["role"] == "assistant":
+            # Inline breakdown table is stored as a special marker
+            if msg.get("type") == "breakdown":
+                bubble_inner = msg["content"]   # already safe HTML
+            else:
+                bubble_inner = content
+            parts.append(f"""
+            <div class="fb-msg-row fb-msg-row-bot">
+                <div class="fb-bubble-bot">{bubble_inner}</div>
+            </div>""")
+        else:
+            lang = msg.get("language", "en")
+            pill = ""
+            if lang and lang != "en" and lang in LANG_LABELS:
+                pill = f'<span class="fb-lang-pill">{LANG_LABELS[lang]}</span>'
+            parts.append(f"""
+            <div class="fb-msg-row fb-msg-row-user">
+                {pill}
+                <div class="fb-bubble-user">{content}</div>
+            </div>""")
+
+    parts.append('</div>')
+    st.markdown("".join(parts), unsafe_allow_html=True)
+
+
+def _latency_caption(stt_ms: float, llm_ms: float, tts_ms: float) -> str:
+    total = stt_ms + llm_ms + tts_ms
+    parts = []
+    if stt_ms > 0:
+        parts.append(f"STT {stt_ms/1000:.1f}s")
+    parts.append(f"LLM {llm_ms/1000:.1f}s")
+    parts.append(f"TTS {tts_ms/1000:.1f}s")
+    parts.append(f"total {total/1000:.1f}s")
+    return "⚡ " + " · ".join(parts)
+
+
+# ── Auth page ──────────────────────────────────────────────────
+
+def show_auth_page() -> None:
+    st.markdown(f"<style>{get_global_css()}</style>", unsafe_allow_html=True)
+
+    col1, col2, col3 = st.columns([1, 1.1, 1])
+    with col2:
+        st.markdown(f"""
+        <div style='text-align:center;padding:3rem 0 2rem'>
+            <div style='font-size:3rem'>💰</div>
+            <h1 style='font-family:Fraunces,Georgia,serif;font-size:2.2rem;
+                        font-weight:500;color:{ACCENT};margin:8px 0 4px;letter-spacing:-0.5px'>
+                FinBot
+            </h1>
+            <p style='color:{TEXT_TERTIARY};font-size:0.88rem;margin:0'>
+                Your AI financial advisor — in any language
+            </p>
+        </div>
         """, unsafe_allow_html=True)
 
-        tab1, tab2 = st.tabs(["🔑 Login", "✨ Sign Up"])
+        tab1, tab2 = st.tabs(["Sign in", "Create account"])
 
         with tab1:
-            email = st.text_input("Email", key="login_email", placeholder="you@example.com")
-            password = st.text_input("Password", type="password", key="login_pass", placeholder="••••••••")
-            if st.button("Login", use_container_width=True, type="primary", key="login_btn"):
+            email    = st.text_input("Email",    key="login_email",    placeholder="you@example.com")
+            password = st.text_input("Password", key="login_pass",     placeholder="••••••••", type="password")
+            if st.button("Sign in", use_container_width=True, type="primary", key="login_btn"):
                 if email and password:
-                    with st.spinner("Logging in..."):
+                    with st.spinner("Signing in…"):
                         session, err = login(email, password)
                     if err:
                         st.error(err)
                     else:
-                        st.session_state.user = session.user.email
-                        st.session_state.user_id = session.user.id
-                        st.session_state.access_token = session.access_token
-                        # Seed budgets on every login (safe — skips existing)
-                        seed_default_budgets(session.user.id, session.access_token)
-                        from finance.database import ChatHistory
-                        ch = ChatHistory()
-                        history = ch.load_history()
-                        st.session_state.messages = history if history else [
-                            {"role": "assistant", "content": "Hey! I'm FinBot, your AI financial advisor. You can talk to me or type — tell me about your expenses, ask about your budget, or get some money advice! 🚀"}
-                        ]
-                        st.session_state.pending_audio = None
+                        _init_session(session)
                         st.rerun()
                 else:
                     st.warning("Please enter your email and password.")
 
         with tab2:
-            new_email = st.text_input("Email", key="signup_email", placeholder="you@example.com")
-            new_pass = st.text_input("Password (min 6 chars)", type="password", key="signup_pass", placeholder="••••••••")
-            new_pass2 = st.text_input("Confirm Password", type="password", key="signup_pass2", placeholder="••••••••")
-            if st.button("Create Account", use_container_width=True, type="primary", key="signup_btn"):
+            new_email  = st.text_input("Email",            key="signup_email",  placeholder="you@example.com")
+            new_pass   = st.text_input("Password (6+ chars)", key="signup_pass",
+                                       placeholder="••••••••", type="password")
+            new_pass2  = st.text_input("Confirm password", key="signup_pass2",  placeholder="••••••••", type="password")
+            if st.button("Create account", use_container_width=True, type="primary", key="signup_btn"):
                 if not new_email or not new_pass:
                     st.warning("Please fill in all fields.")
                 elif new_pass != new_pass2:
@@ -89,500 +185,385 @@ def show_auth_page():
                 elif len(new_pass) < 6:
                     st.error("Password must be at least 6 characters.")
                 else:
-                    with st.spinner("Creating your account..."):
-                        user, err = signup(new_email, new_pass)
+                    with st.spinner("Creating account…"):
+                        _, err = signup(new_email, new_pass)
                     if err:
                         st.error(err)
                     else:
                         temp_session, _ = login(new_email, new_pass)
                         if temp_session:
-                            seed_default_budgets(temp_session.user.id, temp_session.access_token)
-                            st.session_state.user = temp_session.user.email
-                            st.session_state.user_id = temp_session.user.id
-                            st.session_state.access_token = temp_session.access_token
-                            st.session_state.messages = [
-                                {"role": "assistant", "content": "Hey! I'm FinBot, your AI financial advisor. You can talk to me or type — tell me about your expenses, ask about your budget, or get some money advice! 🚀"}
-                            ]
-                            st.session_state.pending_audio = None
+                            _init_session(temp_session)
                             st.rerun()
                         else:
-                            st.success("Account created! Please check your email to confirm, then log in.")
+                            st.success("Account created! Check your email to confirm, then sign in.")
 
 
-# Show auth page if not logged in
+def _init_session(session) -> None:
+    """Populate session state after a successful login."""
+    st.session_state.user         = session.user.email
+    st.session_state.user_id      = session.user.id
+    st.session_state.access_token = session.access_token
+    seed_default_budgets(session.user.id, session.access_token)
+    from finance.database import ChatHistory
+    history = ChatHistory().load_history()
+    st.session_state.messages     = history if history else _welcome_messages()
+    st.session_state.pending_audio = None
+    st.session_state.last_latency  = None
+    st.session_state.undo_expense  = None
+
+
+def _welcome_messages() -> list:
+    return [{"role": "assistant",
+             "content": "Hey! I'm FinBot — your AI financial advisor. "
+                        "Tell me what you spent, ask about your budget, or just say hi. "
+                        "I understand 20+ languages, so speak freely. 🎙️"}]
+
+
+# ── Check auth ─────────────────────────────────────────────────
 if "user" not in st.session_state or not st.session_state.get("user"):
     show_auth_page()
     st.stop()
 
-# ── Browser timezone detection ───────────────────────────────
+# ── Browser timezone ───────────────────────────────────────────
 from streamlit_js_eval import streamlit_js_eval
 if "user_timezone" not in st.session_state:
     tz = streamlit_js_eval(
         js_expressions="Intl.DateTimeFormat().resolvedOptions().timeZone",
-        key="get_timezone"
+        key="get_timezone",
     )
-    st.session_state.user_timezone = tz if tz else "America/New_York"
+    st.session_state.user_timezone = tz or "America/New_York"
 
-# ============================================================
-# IMPORTS (only runs if logged in)
-# ============================================================
+# ── Module imports (post-auth) ─────────────────────────────────
+from brain.llm import FinanceBrain
+from finance.database import BudgetAnalyzer, ChatHistory, ExpenseTracker
+from styles.plotly_theme import (
+    DONUT_COLORS, donut_layout, sparkline_layout, sparkline_trace, trend_layout,
+)
 from voice.stt import SpeechToText
 from voice.tts import TextToSpeech
-from finance.database import ExpenseTracker, BudgetAnalyzer, ChatHistory
-from brain.llm import FinanceBrain
 
-# ============================================================
-# CUSTOM CSS
-# ============================================================
-st.markdown("""
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+# ── Inject global CSS ──────────────────────────────────────────
+st.markdown(f"<style>{get_global_css()}</style>", unsafe_allow_html=True)
 
-    .stApp { font-family: 'Inter', sans-serif; }
-
-    section[data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #0f0f1a 0%, #1a1a2e 100%);
-        border-right: 1px solid rgba(255,255,255,0.05);
-        min-width: 200px !important;
-    }
-    section[data-testid="stSidebar"] button[kind="header"] { display: none !important; }
-
-    div[data-testid="stMetric"] {
-        background: linear-gradient(135deg, rgba(99,102,241,0.15), rgba(139,92,246,0.1));
-        border: 1px solid rgba(99,102,241,0.2);
-        border-radius: 12px;
-        padding: 12px 16px;
-    }
-    div[data-testid="stMetric"] label {
-        color: #a5b4fc !important; font-size: 0.8rem !important;
-        font-weight: 500 !important; text-transform: uppercase; letter-spacing: 0.5px;
-    }
-    div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
-        color: #e0e7ff !important; font-size: 1.6rem !important; font-weight: 700 !important;
-    }
-
-    div[data-testid="stChatMessage"] {
-        border-radius: 16px !important; margin-bottom: 8px;
-        border: 1px solid rgba(255,255,255,0.04);
-    }
-    div[data-testid="stChatInput"] textarea {
-        border-radius: 16px !important;
-        border: 1px solid rgba(99,102,241,0.3) !important; font-size: 0.95rem !important;
-    }
-    div[data-testid="stChatInput"] textarea:focus {
-        border-color: rgba(99,102,241,0.6) !important;
-        box-shadow: 0 0 0 2px rgba(99,102,241,0.15) !important;
-    }
-
-    .stButton > button {
-        border-radius: 12px !important; font-weight: 500 !important;
-        font-size: 0.85rem !important; transition: all 0.2s ease !important;
-        border: 1px solid rgba(99,102,241,0.3) !important;
-    }
-    .stButton > button:hover {
-        border-color: rgba(99,102,241,0.6) !important;
-        box-shadow: 0 4px 12px rgba(99,102,241,0.2) !important;
-        transform: translateY(-1px);
-    }
-
-    .main-title { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
-    .main-title h1 {
-        font-size: 2.2rem; font-weight: 700;
-        background: linear-gradient(135deg, #6366f1, #a78bfa, #f472b6);
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0;
-    }
-    .subtitle { color: #94a3b8; font-size: 0.95rem; margin-bottom: 24px; }
-
-    .sidebar-header {
-        color: #a5b4fc; font-size: 0.75rem; font-weight: 600;
-        text-transform: uppercase; letter-spacing: 1px;
-        margin-top: 24px; margin-bottom: 8px; padding-bottom: 6px;
-        border-bottom: 1px solid rgba(165,180,252,0.15);
-    }
-
-    .insight-card {
-        background: rgba(99,102,241,0.06); border-left: 3px solid #6366f1;
-        border-radius: 0 8px 8px 0; padding: 10px 14px; margin-bottom: 8px;
-        font-size: 0.82rem; color: #cbd5e1; line-height: 1.5;
-    }
-    .insight-card.warning { border-left-color: #f59e0b; background: rgba(245,158,11,0.06); }
-    .insight-card.danger  { border-left-color: #ef4444; background: rgba(239,68,68,0.06); }
-    .insight-card.success { border-left-color: #22c55e; background: rgba(34,197,94,0.06); }
-
-    .status-badge {
-        display: inline-block; padding: 2px 10px; border-radius: 20px;
-        font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
-    }
-    .badge-ok      { background: rgba(34,197,94,0.15); color: #4ade80; }
-    .badge-warning { background: rgba(245,158,11,0.15); color: #fbbf24; }
-    .badge-over    { background: rgba(239,68,68,0.15);  color: #f87171; }
-
-    .mic-area { display: flex; align-items: center; gap: 8px; padding: 8px 0; }
-    .mic-label { color: #94a3b8; font-size: 0.82rem; }
-    .user-pill {
-        background: rgba(99,102,241,0.12); border: 1px solid rgba(99,102,241,0.2);
-        border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; color: #a5b4fc;
-        display: inline-block; margin-bottom: 8px;
-    }
-
-    #MainMenu {visibility: hidden;} footer {visibility: hidden;}
-</style>
-""", unsafe_allow_html=True)
-
-# ============================================================
-# INITIALIZE COMPONENTS
-# ============================================================
+# ── Cached resource init ───────────────────────────────────────
+@st.cache_resource
+def init_stt():   return SpeechToText()
 
 @st.cache_resource
-def init_stt():
-    return SpeechToText()
+def init_tts():   return TextToSpeech(default_lang="en", gender="male")
 
 @st.cache_resource
-def init_tts():
-    return TextToSpeech(default_lang="en", gender="male")
+def init_brain(): return FinanceBrain()
 
-@st.cache_resource
-def init_brain():
-    return FinanceBrain()
-
-brain = init_brain()
-
-tracker = ExpenseTracker()
-analyzer = BudgetAnalyzer()
+brain        = init_brain()
+tracker      = ExpenseTracker()
+analyzer     = BudgetAnalyzer()
 chat_history = ChatHistory()
 
-# Session state defaults
-if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {"role": "assistant", "content": "Hey! I'm FinBot, your AI financial advisor. You can talk to me or type — tell me about your expenses, ask about your budget, or get some money advice! 🚀"}
-    ]
-if "pending_audio" not in st.session_state:
-    st.session_state.pending_audio = None
-if "last_latency" not in st.session_state:
-    st.session_state.last_latency = None
-if "pending_expense" not in st.session_state:
-    st.session_state.pending_expense = None  # holds {amount, category, description, language, stt_ms}
+# ── Session state defaults ─────────────────────────────────────
+if "messages"      not in st.session_state: st.session_state.messages      = _welcome_messages()
+if "pending_audio" not in st.session_state: st.session_state.pending_audio = None
+if "last_latency"  not in st.session_state: st.session_state.last_latency  = None
+if "undo_expense"  not in st.session_state: st.session_state.undo_expense  = None
 
-# ============================================================
-# CORE LOGIC
-# ============================================================
+
+# ── Core pipeline ──────────────────────────────────────────────
 
 def process_user_input(user_text: str, language: str = None, stt_ms: float = 0.0) -> dict:
     t0 = time.perf_counter()
     financial_context = analyzer.generate_context_for_llm()
-    result = brain.process_message(user_text, financial_context, language=language)
-    llm_ms = (time.perf_counter() - t0) * 1000
+    result            = brain.process_message(user_text, financial_context, language=language)
+    llm_ms            = (time.perf_counter() - t0) * 1000
 
-    intent = result["intent"]
-    intent_type = intent.get("intent", "get_advice")
-    entities = intent.get("entities", {})
+    intent_type   = result["intent"].get("intent", "get_advice")
+    entities      = result["intent"].get("entities", {})
     detected_lang = result["language"]
 
     if intent_type == "add_expense":
-        amount = entities.get("amount")
+        amount   = entities.get("amount")
         category = entities.get("category", "other")
-        description = entities.get("description", "")
+        desc     = entities.get("description", "")
         if amount and float(amount) > 0:
-            # Stash for confirmation — don't write to DB yet
-            st.session_state.pending_expense = {
-                "amount": float(amount),
-                "category": category,
-                "description": description,
-                "language": detected_lang,
-                "stt_ms": stt_ms,
-                "llm_ms": llm_ms,
+            # Log immediately (optimistic)
+            exp = tracker.add_expense(float(amount), category, desc)
+            # Store for undo
+            st.session_state.undo_expense = {
+                "label":    f"${float(amount):,.0f} · {category}",
+                "logged":   True,
             }
-            confirm_msg = (
-                f"Got it — **${float(amount):,.0f}** on **{category}**"
-                + (f" ({description})" if description else "")
-                + ". Shall I log that? ✅ / ❌"
+            updated_context = analyzer.generate_context_for_llm()
+            response = brain.generate_response(
+                f"I just logged ${float(amount):,.0f} in {category}. Give a brief confirmation and budget status.",
+                updated_context, language=detected_lang,
             )
-            chat_history.save_message("user", user_text)
-            chat_history.save_message("assistant", confirm_msg)
-            return {"response": confirm_msg, "language": detected_lang, "stt_ms": stt_ms, "llm_ms": llm_ms}
+            chat_history.save_message("user",      user_text)
+            chat_history.save_message("assistant", response)
+            return {"response": response, "language": detected_lang,
+                    "stt_ms": stt_ms, "llm_ms": llm_ms}
 
     elif intent_type == "set_budget":
-        amount = entities.get("amount")
+        amount   = entities.get("amount")
         category = entities.get("category")
         if amount and category:
             analyzer.set_budget(category, float(amount))
             updated_context = analyzer.generate_context_for_llm()
             response = brain.generate_response(
-                f"I just set the {category} budget to {amount}. Confirm this to the user.",
-                updated_context, language=detected_lang
+                f"I just set the {category} budget to {amount}. Confirm this.",
+                updated_context, language=detected_lang,
             )
-            chat_history.save_message("user", user_text)
+            chat_history.save_message("user",      user_text)
             chat_history.save_message("assistant", response)
-            return {"response": response, "language": detected_lang, "stt_ms": stt_ms, "llm_ms": llm_ms}
+            return {"response": response, "language": detected_lang,
+                    "stt_ms": stt_ms, "llm_ms": llm_ms}
 
-    chat_history.save_message("user", user_text)
+    chat_history.save_message("user",      user_text)
     chat_history.save_message("assistant", result["response"])
-    return {"response": result["response"], "language": detected_lang, "stt_ms": stt_ms, "llm_ms": llm_ms}
+    return {"response": result["response"], "language": detected_lang,
+            "stt_ms": stt_ms, "llm_ms": llm_ms}
 
 
-def generate_audio(response_text: str, language: str = "en") -> tuple[str, float]:
+def generate_audio(text: str, language: str = "en") -> tuple[str, float]:
     tts = init_tts()
-    t0 = time.perf_counter()
-    path = tts.generate_file(response_text, language=language, output_path="response.mp3")
-    tts_ms = (time.perf_counter() - t0) * 1000
-    return path, tts_ms
+    t0  = time.perf_counter()
+    path = tts.generate_file(text, language=language, output_path="response.mp3")
+    return path, (time.perf_counter() - t0) * 1000
 
 
-def _latency_caption(stt_ms: float, llm_ms: float, tts_ms: float) -> str:
-    total_ms = stt_ms + llm_ms + tts_ms
-    parts = []
-    if stt_ms > 0:
-        parts.append(f"STT {stt_ms/1000:.1f}s")
-    parts.append(f"LLM {llm_ms/1000:.1f}s")
-    parts.append(f"TTS {tts_ms/1000:.1f}s")
-    parts.append(f"total {total_ms/1000:.1f}s")
-    return "⚡ " + " · ".join(parts)
+def _dispatch(user_text: str, language: str = None, stt_ms: float = 0.0) -> None:
+    """Process input, append messages, queue audio, rerun."""
+    result     = process_user_input(user_text, language=language, stt_ms=stt_ms)
+    audio_path, tts_ms = generate_audio(result["response"], language=result["language"])
+
+    st.session_state.messages.append({"role": "user",      "content": user_text,
+                                       "language": result["language"]})
+    st.session_state.messages.append({"role": "assistant", "content": result["response"]})
+    st.session_state.pending_audio = audio_path
+    if DEBUG:
+        st.session_state.last_latency = _latency_caption(stt_ms, result["llm_ms"], tts_ms)
+    st.rerun()
 
 
-# ============================================================
-# SIDEBAR — FINANCIAL DASHBOARD
-# ============================================================
+# ── Sidebar ────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("""
-        <div style="text-align: center; padding: 8px 0 16px 0;">
-            <span style="font-size: 2.5rem;">💰</span>
-            <h2 style="margin: 4px 0 0 0; font-size: 1.3rem; font-weight: 700;
-                        background: linear-gradient(135deg, #6366f1, #a78bfa);
-                        -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
-                Financial Dashboard
-            </h2>
-        </div>
+    total_month = tracker.get_total_spent(days=30)
+    total_today = sum(e["amount"] for e in tracker.get_today_expenses())
+
+    st.markdown(f"""
+    <div class="fb-sidebar-top">
+        <div class="fb-sidebar-logo">💰 FinBot</div>
+        <div class="fb-sidebar-email">{st.session_state.user}</div>
+    </div>
+    <div class="fb-sidebar-stat-row">
+        <span class="fb-sidebar-stat-label">This month</span>
+        <span class="fb-sidebar-stat-value">${total_month:,.0f}</span>
+    </div>
+    <div class="fb-sidebar-stat-row">
+        <span class="fb-sidebar-stat-label">Today</span>
+        <span class="fb-sidebar-stat-value">${total_today:,.0f}</span>
+    </div>
     """, unsafe_allow_html=True)
 
-    st.markdown(f'<div class="user-pill">👤 {st.session_state.user}</div>', unsafe_allow_html=True)
-    if st.button("🚪 Logout", use_container_width=True):
-        logout()
-        st.rerun()
-
-    total_month = tracker.get_total_spent(days=30)
-    total_today_expenses = tracker.get_today_expenses()
-    total_today = sum(e["amount"] for e in total_today_expenses)
-
-    st.markdown('<div class="sidebar-header">📊 Overview</div>', unsafe_allow_html=True)
-    col1, col2 = st.columns(2)
-    col1.metric("This Month", f"${total_month:,.0f}")
-    col2.metric("Today", f"${total_today:,.0f}")
-
-    st.markdown('<div class="sidebar-header">🎯 Budget Status</div>', unsafe_allow_html=True)
-    budget_status = analyzer.get_budget_status()
-    active_budgets = [b for b in budget_status if b["spent"] > 0]
-
-    if active_budgets:
-        for b in active_budgets:
-            if b["status"] == "over":
-                bar_color, badge_class, badge_text = "#ef4444", "badge-over", "OVER"
-            elif b["status"] == "warning":
-                bar_color, badge_class, badge_text = "#f59e0b", "badge-warning", "WARNING"
-            else:
-                bar_color, badge_class, badge_text = "#22c55e", "badge-ok", "ON TRACK"
-
-            st.markdown(f"""
-                <div style="margin-bottom: 14px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                        <span style="font-size: 0.82rem; font-weight: 600; color: #e2e8f0; text-transform: capitalize;">
-                            {b['category']}
-                        </span>
-                        <span class="status-badge {badge_class}">{badge_text}</span>
-                    </div>
-                    <div style="background: rgba(255,255,255,0.06); border-radius: 8px; height: 8px; overflow: hidden;">
-                        <div style="width: {min(b['percentage'], 100)}%; height: 100%;
-                                    background: {bar_color}; border-radius: 8px;
-                                    transition: width 0.5s ease;"></div>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; margin-top: 3px;">
-                        <span style="font-size: 0.7rem; color: #64748b;">${b['spent']:,.0f} spent</span>
-                        <span style="font-size: 0.7rem; color: #64748b;">${b['budget']:,.0f} limit</span>
-                    </div>
-                </div>
-            """, unsafe_allow_html=True)
-
-        st.markdown('<div class="sidebar-header">📈 Category Breakdown</div>', unsafe_allow_html=True)
-        cats = [b["category"].title() for b in active_budgets]
-        spent_vals = [b["spent"] for b in active_budgets]
-        colors = ["#6366f1", "#8b5cf6", "#a78bfa", "#c4b5fd",
-                  "#e879f9", "#f472b6", "#fb7185", "#f87171"]
-
-        fig_donut = go.Figure(data=[go.Pie(
-            labels=cats, values=spent_vals, hole=0.6,
-            marker=dict(colors=colors[:len(cats)]),
-            textinfo="percent", textfont_size=11,
-            hovertemplate="<b>%{label}</b><br>$%{value:,.0f}<br>%{percent}<extra></extra>"
-        )])
-        fig_donut.update_layout(
-            height=220, margin=dict(l=10, r=10, t=10, b=10),
-            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-            legend=dict(font=dict(size=10, color="#94a3b8"), orientation="h",
-                       y=-0.15, x=0.5, xanchor="center"),
-            showlegend=True
-        )
-        st.plotly_chart(fig_donut, width="stretch")
-    else:
-        st.markdown("""
-            <div style="text-align: center; padding: 30px 20px; color: #64748b;">
-                <span style="font-size: 2rem;">📝</span>
-                <p style="margin-top: 8px; font-size: 0.85rem;">No expenses logged yet.<br>Start chatting to track spending!</p>
-            </div>
-        """, unsafe_allow_html=True)
-
-    st.markdown('<div class="sidebar-header">📉 7-Day Trend</div>', unsafe_allow_html=True)
+    # 7-day sparkline
     daily = tracker.get_daily_totals(days=7)
     if daily:
         df = pd.DataFrame(daily)
         df["date"] = pd.to_datetime(df["date"])
-        df["day"] = df["date"].dt.strftime("%a")
-
+        df["day"]  = df["date"].dt.strftime("%a")
         fig_trend = go.Figure()
         fig_trend.add_trace(go.Scatter(
             x=df["day"], y=df["total"],
             mode="lines+markers+text",
-            line=dict(color="#6366f1", width=2.5, shape="spline"),
-            marker=dict(size=8, color="#6366f1", line=dict(width=2, color="#1a1a2e")),
+            line=dict(color=ACCENT, width=2, shape="spline"),
+            marker=dict(size=6, color=ACCENT, line=dict(width=1.5, color=SURFACE)),
             text=[f"${v:,.0f}" for v in df["total"]],
             textposition="top center",
-            textfont=dict(size=9, color="#a5b4fc"),
-            fill="tozeroy", fillcolor="rgba(99,102,241,0.08)"
+            textfont=dict(size=8, color=TEXT_TERTIARY),
+            fill="tozeroy",
+            fillcolor="rgba(217,168,100,0.07)",
         ))
-        fig_trend.update_layout(
-            height=180, margin=dict(l=0, r=0, t=10, b=0),
-            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-            xaxis=dict(showgrid=False, color="#64748b", tickfont=dict(size=10)),
-            yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.03)",
-                      color="#64748b", tickfont=dict(size=9)),
-            showlegend=False
-        )
-        st.plotly_chart(fig_trend, width="stretch")
-    else:
-        st.caption("No data for the past 7 days yet.")
+        fig_trend.update_layout(**trend_layout(height=150))
+        st.markdown('<div class="fb-trend-label">7-day trend</div>', unsafe_allow_html=True)
+        st.plotly_chart(fig_trend, use_container_width=True, config={"displayModeBar": False})
 
-    st.markdown('<div class="sidebar-header">💡 Smart Insights</div>', unsafe_allow_html=True)
-    insights = analyzer.get_spending_insights()
-    for insight in insights:
-        if "exceeded" in insight.lower() or "over" in insight.lower():
-            card_class = "danger"
-        elif "heads up" in insight.lower() or "warning" in insight.lower() or "above" in insight.lower():
-            card_class = "warning"
-        elif "looking good" in insight.lower() or "within" in insight.lower():
-            card_class = "success"
-        else:
-            card_class = ""
-        st.markdown(f'<div class="insight-card {card_class}">{insight}</div>', unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("Sign out", use_container_width=True):
+        logout()
+        st.rerun()
 
 
-# ============================================================
-# MAIN CHAT AREA
-# ============================================================
-st.markdown("""
-    <div class="main-title">
-        <span style="font-size: 2.5rem;">💰</span>
-        <h1>FinBot</h1>
-    </div>
-    <p class="subtitle">Your AI Financial Advisor — Talk or Type in any language!</p>
+# ── Main area ──────────────────────────────────────────────────
+
+# Header
+st.markdown(f"""
+<div class="fb-header">
+    <span class="fb-header-title">FinBot</span>
+    <span class="fb-header-sub">your AI financial advisor</span>
+</div>
 """, unsafe_allow_html=True)
 
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.write(msg["content"])
+# ── Hero stats ─────────────────────────────────────────────────
+total_month       = tracker.get_total_spent(days=30)
+today_expenses    = tracker.get_today_expenses()
+total_today       = sum(e["amount"] for e in today_expenses)
+today_count       = len(today_expenses)
+budget_status     = analyzer.get_budget_status()
+active_budgets    = [b for b in budget_status if b["budget"] > 0]
 
+# Budget-left aggregate
+total_budget  = sum(b["budget"]  for b in active_budgets)
+total_spent_b = sum(b["spent"]   for b in active_budgets)
+budget_left   = total_budget - total_spent_b
+budget_pct    = (total_spent_b / total_budget * 100) if total_budget > 0 else 0
+
+if budget_pct >= 90:
+    bval_cls = "fb-stat-value-danger"
+elif budget_pct >= 70:
+    bval_cls = "fb-stat-value-warning"
+else:
+    bval_cls = "fb-stat-value-success"
+
+# 30-day sparkline data
+daily_30 = tracker.get_daily_totals(days=30)
+
+col_hero, col_today, col_budget = st.columns([1.7, 1, 1])
+
+with col_hero:
+    st.markdown(f"""
+    <div class="fb-hero-card">
+        <div class="fb-stat-label">Spent this month</div>
+        <div class="fb-stat-value">${total_month:,.0f}</div>
+        <div class="fb-stat-sub">30-day total</div>
+    </div>
+    """, unsafe_allow_html=True)
+    if daily_30:
+        df30 = pd.DataFrame(daily_30)
+        fig_spark = go.Figure()
+        fig_spark.add_trace(go.Scatter(**sparkline_trace(
+            list(range(len(df30))), df30["total"].tolist()
+        )))
+        fig_spark.update_layout(**sparkline_layout(height=56))
+        st.plotly_chart(fig_spark, use_container_width=True,
+                        config={"displayModeBar": False, "staticPlot": True})
+
+with col_today:
+    st.markdown(f"""
+    <div class="fb-stat-card">
+        <div class="fb-stat-label">Today</div>
+        <div class="fb-stat-value-sm">${total_today:,.0f}</div>
+        <div class="fb-stat-sub">{today_count} expense{'s' if today_count != 1 else ''}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col_budget:
+    st.markdown(f"""
+    <div class="fb-stat-card">
+        <div class="fb-stat-label">Budget left</div>
+        <div class="fb-stat-value-sm {bval_cls}">${budget_left:,.0f}</div>
+        <div class="fb-stat-sub">{100 - budget_pct:.0f}% remaining</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+
+# ── Inject breakdown as first bot message if data exists & not yet injected ──
+if active_budgets and not any(m.get("type") == "breakdown" for m in st.session_state.messages):
+    breakdown_html = _category_breakdown_html(budget_status)
+    st.session_state.messages.append({
+        "role":    "assistant",
+        "content": breakdown_html,
+        "type":    "breakdown",
+    })
+
+# ── Chat messages ──────────────────────────────────────────────
+_render_chat(st.session_state.messages)
+
+# ── Pending audio ──────────────────────────────────────────────
 if st.session_state.pending_audio and os.path.exists(st.session_state.pending_audio):
     st.audio(st.session_state.pending_audio, autoplay=True)
-    if st.session_state.last_latency:
+    if DEBUG and st.session_state.last_latency:
         st.caption(st.session_state.last_latency)
-        st.session_state.last_latency = None
+    st.session_state.last_latency  = None
     st.session_state.pending_audio = None
 
-# ── Expense confirmation UI ────────────────────────────────────
-if st.session_state.pending_expense:
-    exp = st.session_state.pending_expense
-    col_yes, col_no, _ = st.columns([1, 1, 4])
-    if col_yes.button("✅ Yes, log it", use_container_width=True, type="primary"):
-        tracker.add_expense(exp["amount"], exp["category"], exp["description"])
-        updated_context = analyzer.generate_context_for_llm()
-        response = brain.generate_response(
-            f"I just logged an expense of {exp['amount']} in {exp['category']}. Give me a quick update.",
-            updated_context, language=exp["language"]
+# ── Undo toast ─────────────────────────────────────────────────
+if st.session_state.undo_expense:
+    undo = st.session_state.undo_expense
+    col_msg, col_btn = st.columns([5, 1])
+    with col_msg:
+        st.markdown(
+            f'<div class="fb-undo-toast">✓ Logged {undo["label"]}</div>',
+            unsafe_allow_html=True,
         )
-        chat_history.save_message("assistant", response)
-        audio_path, tts_ms = generate_audio(response, language=exp["language"])
-        st.session_state.messages.append({"role": "assistant", "content": response})
-        st.session_state.last_latency = _latency_caption(exp["stt_ms"], exp["llm_ms"], tts_ms)
-        st.session_state.pending_audio = audio_path
-        st.session_state.pending_expense = None
-        st.rerun()
-    if col_no.button("❌ Cancel", use_container_width=True):
-        cancel_msg = "No problem, I won't log that."
-        chat_history.save_message("assistant", cancel_msg)
-        st.session_state.messages.append({"role": "assistant", "content": cancel_msg})
-        st.session_state.pending_expense = None
-        st.rerun()
-
-st.markdown('<div class="mic-area">', unsafe_allow_html=True)
-col_mic, col_mic_label = st.columns([1, 4])
-with col_mic:
-    audio_data = mic_recorder(
-        start_prompt="🎤 Speak", stop_prompt="⏹️ Stop",
-        just_once=True, use_container_width=True, key="mic_recorder"
-    )
-with col_mic_label:
-    st.markdown('<span class="mic-label">Click 🎤 to record, then ⏹️ to stop</span>', unsafe_allow_html=True)
-st.markdown('</div>', unsafe_allow_html=True)
-
-if audio_data and audio_data.get("bytes"):
-    with st.spinner("🧠 Transcribing & thinking..."):
-        stt = init_stt()
-        t_stt = time.perf_counter()
-        stt_result = stt.transcribe_bytes(audio_data["bytes"])
-        stt_ms = (time.perf_counter() - t_stt) * 1000
-        if stt_result["text"]:
-            user_text = stt_result["text"]
-            detected_lang = stt_result["language"]
-            st.session_state.messages.append({"role": "user", "content": user_text})
-            result = process_user_input(user_text, language=detected_lang, stt_ms=stt_ms)
-            audio_path, tts_ms = generate_audio(result["response"], language=result["language"])
-            st.session_state.messages.append({"role": "assistant", "content": result["response"]})
-            st.session_state.last_latency = _latency_caption(stt_ms, result["llm_ms"], tts_ms)
-            st.session_state.pending_audio = audio_path
+    with col_btn:
+        if st.button("Undo", key="undo_btn"):
+            deleted = tracker.undo_last_expense()
+            st.session_state.undo_expense = None
+            if deleted:
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": f"Done — removed ${deleted['amount']:,.0f} from {deleted['category']}.",
+                })
             st.rerun()
-        else:
-            st.warning("Couldn't catch that. Try speaking louder or closer to your mic.")
 
-if user_text := st.chat_input("💬 Type a message... (e.g., 'I spent 300 on lunch')"):
-    st.session_state.messages.append({"role": "user", "content": user_text})
-    with st.chat_message("user"):
-        st.write(user_text)
-    with st.chat_message("assistant"):
-        with st.spinner("🧠 Thinking..."):
-            result = process_user_input(user_text)
-            audio_path, tts_ms = generate_audio(result["response"], language=result["language"])
-            st.write(result["response"])
-            st.caption(_latency_caption(0, result["llm_ms"], tts_ms))
-    st.session_state.messages.append({"role": "assistant", "content": result["response"]})
-    st.session_state.pending_audio = audio_path
-    st.rerun()
-
-st.divider()
-st.markdown('<div class="quick-actions">', unsafe_allow_html=True)
-quick_cols = st.columns(4)
-quick_prompts = [
+# ── Suggestion chips ───────────────────────────────────────────
+CHIPS = [
     ("📊", "How much did I spend today?"),
     ("🎯", "Am I within my budget?"),
     ("💡", "Give me a savings tip"),
-    ("📈", "Show my spending patterns")
+    ("📋", "Show breakdown"),
 ]
-for i, col in enumerate(quick_cols):
-    icon, text = quick_prompts[i]
-    if col.button(f"{icon} {text}", width="stretch"):
-        full_prompt = f"{icon} {text}"
-        st.session_state.messages.append({"role": "user", "content": full_prompt})
-        with st.spinner("🧠 Thinking..."):
-            result = process_user_input(full_prompt)
-            audio_path, tts_ms = generate_audio(result["response"], language=result["language"])
-        st.session_state.messages.append({"role": "assistant", "content": result["response"]})
-        st.session_state.last_latency = _latency_caption(0, result["llm_ms"], tts_ms)
-        st.session_state.pending_audio = audio_path
-        st.rerun()
+
+st.markdown('<div class="fb-chips-row">', unsafe_allow_html=True)
+chip_cols = st.columns(len(CHIPS))
+for i, (icon, label) in enumerate(CHIPS):
+    with chip_cols[i]:
+        st.markdown('<div data-testid="fb-chip">', unsafe_allow_html=True)
+        if st.button(f"{icon} {label}", key=f"chip_{i}"):
+            if label == "Show breakdown":
+                # Re-inject fresh breakdown into chat
+                breakdown_html = _category_breakdown_html(analyzer.get_budget_status())
+                st.session_state.messages.append({
+                    "role": "assistant", "content": breakdown_html, "type": "breakdown"
+                })
+                st.rerun()
+            else:
+                _dispatch(f"{icon} {label}")
+        st.markdown('</div>', unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
+
+# ── Input area ─────────────────────────────────────────────────
+st.markdown('<div class="fb-input-bar">', unsafe_allow_html=True)
+col_input, col_mic = st.columns([11, 1])
+
+with col_input:
+    if user_text := st.chat_input("Speak or type — I understand 20+ languages…"):
+        st.session_state.undo_expense = None  # clear stale undo on new input
+        _dispatch(user_text)
+
+with col_mic:
+    st.markdown('<div data-testid="fb-mic-recorder">', unsafe_allow_html=True)
+    audio_data = mic_recorder(
+        start_prompt="🎤",
+        stop_prompt="⏹",
+        just_once=True,
+        use_container_width=True,
+        key="mic_recorder",
+    )
+    st.markdown('</div>', unsafe_allow_html=True)
+
+st.markdown('</div>', unsafe_allow_html=True)
+
+# ── Voice input handler ────────────────────────────────────────
+if audio_data and audio_data.get("bytes"):
+    with st.spinner("Transcribing…"):
+        stt         = init_stt()
+        t_stt       = time.perf_counter()
+        stt_result  = stt.transcribe_bytes(audio_data["bytes"])
+        stt_ms      = (time.perf_counter() - t_stt) * 1000
+    if stt_result["text"]:
+        st.session_state.undo_expense = None
+        _dispatch(stt_result["text"],
+                  language=stt_result["language"],
+                  stt_ms=stt_ms)
+    else:
+        st.warning("Couldn't catch that — try speaking a little louder.")

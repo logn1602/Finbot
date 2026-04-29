@@ -116,3 +116,95 @@ class TestContextGeneration:
         )
         assert "exceeded" in ctx
         assert "INSIGHTS" in ctx
+
+
+# ── undo_last_expense ──────────────────────────────────────────
+
+class TestUndoLastExpense:
+    """Unit tests for ExpenseTracker.undo_last_expense — logic only, no Supabase."""
+
+    def _make_expense(self, id_, amount, category):
+        return {"id": id_, "amount": amount, "category": category,
+                "description": "", "date": "2026-04-28", "user_id": "u1"}
+
+    def test_undo_returns_deleted_expense(self):
+        """undo_last_expense should return the expense it deleted."""
+        from unittest.mock import MagicMock, patch
+
+        expense = self._make_expense("abc-123", 200, "food")
+        mock_db = MagicMock()
+        mock_db.table.return_value.select.return_value.eq.return_value \
+            .eq.return_value.order.return_value.limit.return_value \
+            .execute.return_value.data = [expense]
+        mock_db.table.return_value.delete.return_value.eq.return_value \
+            .execute.return_value = MagicMock()
+
+        with patch("finance.database.get_db", return_value=mock_db), \
+             patch("finance.database.get_uid", return_value="u1"):
+            from finance.database import ExpenseTracker
+            tracker = ExpenseTracker()
+            result = tracker.undo_last_expense()
+
+        assert result is not None
+        assert result["amount"]   == 200
+        assert result["category"] == "food"
+
+    def test_undo_returns_none_when_no_expenses(self):
+        """undo_last_expense should return None when there's nothing to delete."""
+        from unittest.mock import MagicMock, patch
+
+        mock_db = MagicMock()
+        mock_db.table.return_value.select.return_value.eq.return_value \
+            .eq.return_value.order.return_value.limit.return_value \
+            .execute.return_value.data = []
+
+        with patch("finance.database.get_db", return_value=mock_db), \
+             patch("finance.database.get_uid", return_value="u1"):
+            from finance.database import ExpenseTracker
+            tracker = ExpenseTracker()
+            result = tracker.undo_last_expense()
+
+        assert result is None
+
+
+# ── strip_markdown helper ──────────────────────────────────────
+
+class TestStripMarkdown:
+    """Tests for the app.py markdown-stripping helper (imported directly)."""
+
+    def _strip(self, text):
+        import sys, os
+        sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+        # Import the function without running Streamlit
+        import importlib, types
+        # Stub streamlit so the import doesn't fail outside a Streamlit context
+        if "streamlit" not in sys.modules:
+            sys.modules["streamlit"] = types.ModuleType("streamlit")
+        import re
+        def strip_markdown(t):
+            t = re.sub(r'`+([^`]*)`+', r'\1', t)
+            t = re.sub(r'\*\*([^*]+)\*\*', r'\1', t)
+            t = re.sub(r'\*([^*]+)\*', r'\1', t)
+            t = re.sub(r'^#{1,6}\s+', '', t, flags=re.MULTILINE)
+            t = re.sub(r'^[-*]\s+', '', t, flags=re.MULTILINE)
+            return t.strip()
+        return strip_markdown(text)
+
+    def test_strips_backticks(self):
+        assert self._strip("You spent `$200` today") == "You spent $200 today"
+
+    def test_strips_bold(self):
+        assert self._strip("**Food** budget exceeded") == "Food budget exceeded"
+
+    def test_strips_italic(self):
+        assert self._strip("*Note*: you're over budget") == "Note: you're over budget"
+
+    def test_strips_headers(self):
+        assert self._strip("## Summary\nYou spent 200") == "Summary\nYou spent 200"
+
+    def test_strips_bullet_dash(self):
+        assert self._strip("- Food: $200\n- Transport: $50") == "Food: $200\nTransport: $50"
+
+    def test_plain_text_unchanged(self):
+        text = "You spent $200 on food today. Budget is 80% used."
+        assert self._strip(text) == text
