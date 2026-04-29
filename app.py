@@ -55,6 +55,17 @@ LANG_LABELS = {
 }
 
 
+_BREAKDOWN_SENTINEL = '<div class="fb-breakdown-wrap">'
+
+def _is_breakdown_msg(msg: dict) -> bool:
+    """True for breakdown messages whether they came from session state or the DB.
+    DB rows have no 'type' key, so we detect by HTML content shape instead."""
+    return (
+        msg.get("type") == "breakdown"
+        or msg.get("content", "").strip().startswith(_BREAKDOWN_SENTINEL)
+    )
+
+
 def _category_breakdown_html(budget_status: list) -> str:
     """Render the inline budget-breakdown table as an HTML string."""
     active = [b for b in budget_status if b["budget"] > 0]
@@ -110,8 +121,9 @@ def _render_chat(messages: list) -> None:
         role = msg["role"]
 
         if role == "assistant":
-            if msg.get("type") == "breakdown":
-                # Breakdown HTML is already safe — wrap in a left-aligned bot bubble
+            if _is_breakdown_msg(msg):
+                # Breakdown HTML is already safe — render verbatim, never through _safe_text.
+                # This also handles rows loaded from Supabase that have no 'type' key.
                 st.markdown(
                     f'<div style="display:flex;justify-content:flex-start;margin:2px 0 6px">'
                     f'<div class="fb-bubble-bot">{msg["content"]}</div></div>',
@@ -442,7 +454,8 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ── Inject breakdown as first bot message if data exists & not yet injected ──
-if active_budgets and not any(m.get("type") == "breakdown" for m in st.session_state.messages):
+# _is_breakdown_msg handles both in-memory (type key) and DB-loaded (HTML shape) rows.
+if active_budgets and not any(_is_breakdown_msg(m) for m in st.session_state.messages):
     breakdown_html = _category_breakdown_html(budget_status)
     st.session_state.messages.append({
         "role":    "assistant",
