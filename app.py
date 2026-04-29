@@ -3,7 +3,6 @@ FinBot — AI Voice Financial Assistant
 Premium dark UI with warm gold accent, custom chat bubbles, hero stats.
 """
 
-import html
 import os
 import re
 import time
@@ -91,37 +90,53 @@ def _category_breakdown_html(budget_status: list) -> str:
     </div>"""
 
 
-def _render_chat(messages: list) -> None:
-    """Render all chat messages as custom HTML bubbles in one block."""
-    parts = ['<div class="fb-chat-wrap">']
-    for msg in messages:
-        content = html.escape(strip_markdown(msg["content"]))
-        # Preserve line breaks
-        content = content.replace("\n", "<br>")
+def _safe_text(text: str) -> str:
+    """Escape only angle brackets so they don't break HTML structure.
+    Apostrophes and quotes are intentionally left unescaped — html.escape()
+    converts them to &#x27; which Streamlit's markdown renderer shows literally."""
+    return (strip_markdown(text)
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\n", "<br>"))
 
-        if msg["role"] == "assistant":
-            # Inline breakdown table is stored as a special marker
+
+def _render_chat(messages: list) -> None:
+    """Render each chat message as its own st.markdown call.
+    One-big-block rendering caused Streamlit's markdown parser to strip
+    opening div tags (with classes) while leaving closing tags as raw text.
+    Per-message calls with inline flex styles sidestep the parser entirely."""
+    for msg in messages:
+        role = msg["role"]
+
+        if role == "assistant":
             if msg.get("type") == "breakdown":
-                bubble_inner = msg["content"]   # already safe HTML
+                # Breakdown HTML is already safe — wrap in a left-aligned bot bubble
+                st.markdown(
+                    f'<div style="display:flex;justify-content:flex-start;margin:2px 0 6px">'
+                    f'<div class="fb-bubble-bot">{msg["content"]}</div></div>',
+                    unsafe_allow_html=True,
+                )
             else:
-                bubble_inner = content
-            parts.append(f"""
-            <div class="fb-msg-row fb-msg-row-bot">
-                <div class="fb-bubble-bot">{bubble_inner}</div>
-            </div>""")
+                text = _safe_text(msg["content"])
+                st.markdown(
+                    f'<div style="display:flex;justify-content:flex-start;margin:2px 0 6px">'
+                    f'<div class="fb-bubble-bot">{text}</div></div>',
+                    unsafe_allow_html=True,
+                )
         else:
+            text = _safe_text(msg["content"])
             lang = msg.get("language", "en")
             pill = ""
             if lang and lang != "en" and lang in LANG_LABELS:
-                pill = f'<span class="fb-lang-pill">{LANG_LABELS[lang]}</span>'
-            parts.append(f"""
-            <div class="fb-msg-row fb-msg-row-user">
-                {pill}
-                <div class="fb-bubble-user">{content}</div>
-            </div>""")
-
-    parts.append('</div>')
-    st.markdown("".join(parts), unsafe_allow_html=True)
+                pill = (f'<div style="text-align:right;margin-bottom:3px">'
+                        f'<span class="fb-lang-pill">{LANG_LABELS[lang]}</span></div>')
+            st.markdown(
+                f'{pill}'
+                f'<div style="display:flex;justify-content:flex-end;margin:2px 0 6px">'
+                f'<div class="fb-bubble-user">{text}</div></div>',
+                unsafe_allow_html=True,
+            )
 
 
 def _latency_caption(stt_ms: float, llm_ms: float, tts_ms: float) -> str:
