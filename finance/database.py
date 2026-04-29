@@ -223,25 +223,57 @@ class BudgetAnalyzer:
         return insights
 
     def generate_context_for_llm(self):
-        status = self.get_budget_status()
-        insights = self.get_spending_insights()
+        status      = self.get_budget_status()
+        insights    = self.get_spending_insights()
         total_month = self.tracker.get_total_spent(days=30)
         total_today = sum(e["amount"] for e in self.tracker.get_today_expenses())
 
-        context = f"""
-USER'S FINANCIAL SNAPSHOT:
-- Total spent this month: {total_month:.0f}
-- Total spent today: {total_today:.0f}
+        # Pre-compute derived numbers so the LLM never has to do arithmetic
+        now           = now_local()
+        days_passed   = now.day
+        # last day of current month
+        next_month    = now.replace(day=28) + timedelta(days=4)
+        days_in_month = (next_month - timedelta(days=next_month.day)).day
+        days_remaining = days_in_month - days_passed
+        daily_avg      = total_month / days_passed if days_passed > 0 else 0
+        projected_eom  = daily_avg * days_in_month
 
-BUDGET STATUS:
-"""
+        active   = [s for s in status if s["budget"] > 0]
+        tot_bud  = sum(s["budget"] for s in active)
+        tot_spent = sum(s["spent"]  for s in active)
+        tot_left  = tot_bud - tot_spent
+        tot_pct   = round(tot_spent / tot_bud * 100, 1) if tot_bud > 0 else 0
+
+        context = (
+            "USER'S FINANCIAL SNAPSHOT (all figures pre-calculated — use them exactly, do not recompute):\n"
+            f"- Month-to-date spend : ${total_month:,.2f}\n"
+            f"- Today's spend       : ${total_today:,.2f}\n"
+            f"- Daily average       : ${daily_avg:,.2f}\n"
+            f"- Days elapsed / total: {days_passed} / {days_in_month} ({days_remaining} days left)\n"
+            f"- Projected month total (at current rate): ${projected_eom:,.2f}\n\n"
+            "OVERALL BUDGET SUMMARY:\n"
+            f"- Total budgeted  : ${tot_bud:,.2f}\n"
+            f"- Total spent     : ${tot_spent:,.2f}\n"
+            f"- Total remaining : ${tot_left:,.2f}  ({tot_pct}% used)\n\n"
+            "PER-CATEGORY BREAKDOWN:\n"
+        )
+
         for s in status:
-            if s["spent"] > 0:
-                context += f"- {s['category']}: spent {s['spent']:.0f}/{s['budget']:.0f} ({s['percentage']}%)\n"
+            if s["budget"] > 0:
+                context += (
+                    f"- {s['category']:12s}: "
+                    f"${s['spent']:,.2f} spent / ${s['budget']:,.2f} limit  "
+                    f"(${s['remaining']:,.2f} left, {s['percentage']}%, {s['status'].upper()})\n"
+                )
 
         context += "\nINSIGHTS:\n"
         for insight in insights:
             context += f"- {insight}\n"
+
+        context += (
+            "\nRULE: Every number above is exact. "
+            "Quote them verbatim; never perform your own arithmetic on user data."
+        )
 
         return context
 

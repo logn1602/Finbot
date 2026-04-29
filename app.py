@@ -251,9 +251,7 @@ if "user_timezone" not in st.session_state:
 # ── Module imports (post-auth) ─────────────────────────────────
 from brain.llm import FinanceBrain
 from finance.database import BudgetAnalyzer, ChatHistory, ExpenseTracker
-from styles.plotly_theme import (
-    DONUT_COLORS, donut_layout, sparkline_layout, sparkline_trace, trend_layout,
-)
+from styles.plotly_theme import trend_layout
 from voice.stt import SpeechToText
 from voice.tts import TextToSpeech
 
@@ -359,22 +357,49 @@ def _dispatch(user_text: str, language: str = None, stt_ms: float = 0.0) -> None
 
 
 # ── Sidebar ────────────────────────────────────────────────────
+# All stats are computed here so they remain visible in the fixed
+# sidebar while the main chat area scrolls independently.
 with st.sidebar:
-    total_month = tracker.get_total_spent(days=30)
-    total_today = sum(e["amount"] for e in tracker.get_today_expenses())
+    total_month    = tracker.get_total_spent(days=30)
+    today_expenses = tracker.get_today_expenses()
+    total_today    = sum(e["amount"] for e in today_expenses)
+    today_count    = len(today_expenses)
+    budget_status  = analyzer.get_budget_status()
+    active_budgets = [b for b in budget_status if b["budget"] > 0]
+
+    total_budget  = sum(b["budget"] for b in active_budgets)
+    total_spent_b = sum(b["spent"]  for b in active_budgets)
+    budget_left   = total_budget - total_spent_b
+    budget_pct    = (total_spent_b / total_budget * 100) if total_budget > 0 else 0
+
+    if budget_pct >= 90:
+        bval_cls = "fb-scard-danger"
+    elif budget_pct >= 70:
+        bval_cls = "fb-scard-warning"
+    else:
+        bval_cls = "fb-scard-ok"
 
     st.markdown(f"""
     <div class="fb-sidebar-top">
         <div class="fb-sidebar-logo">💰 FinBot</div>
         <div class="fb-sidebar-email">{st.session_state.user}</div>
     </div>
-    <div class="fb-sidebar-stat-row">
-        <span class="fb-sidebar-stat-label">This month</span>
-        <span class="fb-sidebar-stat-value">${total_month:,.0f}</span>
-    </div>
-    <div class="fb-sidebar-stat-row">
-        <span class="fb-sidebar-stat-label">Today</span>
-        <span class="fb-sidebar-stat-value">${total_today:,.0f}</span>
+    <div class="fb-sidebar-stats">
+        <div class="fb-scard fb-scard-main">
+            <div class="fb-scard-label">This month</div>
+            <div class="fb-scard-value">${total_month:,.0f}</div>
+            <div class="fb-scard-sub">30-day total</div>
+        </div>
+        <div class="fb-scard">
+            <div class="fb-scard-label">Today</div>
+            <div class="fb-scard-value-sm">${total_today:,.0f}</div>
+            <div class="fb-scard-sub">{today_count} expense{'s' if today_count != 1 else ''}</div>
+        </div>
+        <div class="fb-scard">
+            <div class="fb-scard-label">Budget left</div>
+            <div class="fb-scard-value-sm {bval_cls}">${budget_left:,.0f}</div>
+            <div class="fb-scard-sub">{100 - budget_pct:.0f}% remaining</div>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -415,70 +440,6 @@ st.markdown(f"""
     <span class="fb-header-sub">your AI financial advisor</span>
 </div>
 """, unsafe_allow_html=True)
-
-# ── Hero stats ─────────────────────────────────────────────────
-total_month       = tracker.get_total_spent(days=30)
-today_expenses    = tracker.get_today_expenses()
-total_today       = sum(e["amount"] for e in today_expenses)
-today_count       = len(today_expenses)
-budget_status     = analyzer.get_budget_status()
-active_budgets    = [b for b in budget_status if b["budget"] > 0]
-
-# Budget-left aggregate
-total_budget  = sum(b["budget"]  for b in active_budgets)
-total_spent_b = sum(b["spent"]   for b in active_budgets)
-budget_left   = total_budget - total_spent_b
-budget_pct    = (total_spent_b / total_budget * 100) if total_budget > 0 else 0
-
-if budget_pct >= 90:
-    bval_cls = "fb-stat-value-danger"
-elif budget_pct >= 70:
-    bval_cls = "fb-stat-value-warning"
-else:
-    bval_cls = "fb-stat-value-success"
-
-# 30-day sparkline data
-daily_30 = tracker.get_daily_totals(days=30)
-
-col_hero, col_today, col_budget = st.columns([1.7, 1, 1])
-
-with col_hero:
-    st.markdown(f"""
-    <div class="fb-hero-card">
-        <div class="fb-stat-label">Spent this month</div>
-        <div class="fb-stat-value">${total_month:,.0f}</div>
-        <div class="fb-stat-sub">30-day total</div>
-    </div>
-    """, unsafe_allow_html=True)
-    if daily_30:
-        df30 = pd.DataFrame(daily_30)
-        fig_spark = go.Figure()
-        fig_spark.add_trace(go.Scatter(**sparkline_trace(
-            list(range(len(df30))), df30["total"].tolist()
-        )))
-        fig_spark.update_layout(**sparkline_layout(height=56))
-        st.plotly_chart(fig_spark, use_container_width=True,
-                        config={"displayModeBar": False, "staticPlot": True})
-
-with col_today:
-    st.markdown(f"""
-    <div class="fb-stat-card">
-        <div class="fb-stat-label">Today</div>
-        <div class="fb-stat-value-sm">${total_today:,.0f}</div>
-        <div class="fb-stat-sub">{today_count} expense{'s' if today_count != 1 else ''}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col_budget:
-    st.markdown(f"""
-    <div class="fb-stat-card">
-        <div class="fb-stat-label">Budget left</div>
-        <div class="fb-stat-value-sm {bval_cls}">${budget_left:,.0f}</div>
-        <div class="fb-stat-sub">{100 - budget_pct:.0f}% remaining</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
 
 # ── Inject breakdown as first bot message if data exists & not yet injected ──
 if active_budgets and not any(m.get("type") == "breakdown" for m in st.session_state.messages):
