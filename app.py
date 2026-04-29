@@ -55,7 +55,7 @@ LANG_LABELS = {
 }
 
 
-_BREAKDOWN_SENTINEL = 'fb-breakdown-wrap'
+_BREAKDOWN_SENTINEL = 'Budget breakdown'   # present in every breakdown block
 
 def _is_breakdown_msg(msg: dict) -> bool:
     """True for breakdown messages whether they came from session state or the DB.
@@ -87,38 +87,57 @@ def _strip_stale_breakdowns(messages: list) -> list:
 
 
 def _category_breakdown_html(budget_status: list) -> str:
-    """Render the inline budget-breakdown table as an HTML string."""
+    """Render the budget breakdown table using ONLY inline styles.
+
+    Streamlit 1.x's markdown renderer partially escapes nested HTML when
+    it encounters CSS class attributes inside a block — the outer wrapper
+    renders fine but inner row divs show as raw text.  Inlining every style
+    makes the HTML fully self-contained and bypasses that parser quirk.
+    """
     active = [b for b in budget_status if b["budget"] > 0]
     if not active:
-        return "<p style='color:var(--text-tertiary);font-size:0.82rem'>No budget data yet.</p>"
+        return "<p style='color:rgba(232,230,225,0.4);font-size:0.82rem'>No budget data yet.</p>"
 
     rows = []
     for b in active:
         pct = min(b["percentage"], 100)
         if b["status"] == "over":
-            badge_cls, bar_color = "fb-badge-danger",  DANGER
+            badge_bg, badge_color, bar_color = "rgba(224,138,122,0.15)", "#e08a7a", DANGER
         elif b["status"] == "warning":
-            badge_cls, bar_color = "fb-badge-warning", WARNING
+            badge_bg, badge_color, bar_color = "rgba(240,201,122,0.15)", "#f0c97a", WARNING
         else:
-            badge_cls, bar_color = "fb-badge-ok",      SUCCESS
+            badge_bg, badge_color, bar_color = "rgba(127,201,154,0.15)", "#7fc99a", SUCCESS
 
         badge_text = {"over": "OVER", "warning": "WARN", "ok": "OK"}[b["status"]]
-        rows.append(f"""
-        <div class="fb-category-row">
-            <span class="fb-cat-name">{b['category']}</span>
-            <span class="fb-cat-amounts">${b['spent']:,.0f} / ${b['budget']:,.0f}</span>
-            <span class="fb-status-badge {badge_cls}">{badge_text}</span>
-            <span class="fb-cat-pct">{b['percentage']:.0f}%</span>
-            <div class="fb-cat-bar-wrap">
-                <div class="fb-cat-bar-fill" style="width:{pct}%;background:{bar_color}"></div>
-            </div>
-        </div>""")
+        rows.append(
+            f'<div style="display:flex;align-items:center;gap:10px;padding:8px 0;'
+            f'border-bottom:1px solid rgba(255,255,255,0.06);">'
+            f'<span style="font-family:\'JetBrains Mono\',monospace;color:#d9a864;'
+            f'font-size:0.78rem;width:100px;flex-shrink:0">{b["category"]}</span>'
+            f'<span style="font-family:\'JetBrains Mono\',monospace;font-size:0.75rem;'
+            f'color:rgba(232,230,225,0.6);flex:1">'
+            f'${b["spent"]:,.0f}&nbsp;/&nbsp;${b["budget"]:,.0f}</span>'
+            f'<span style="font-size:0.6rem;font-family:Inter,sans-serif;letter-spacing:0.4px;'
+            f'text-transform:uppercase;padding:2px 7px;border-radius:20px;flex-shrink:0;'
+            f'background:{badge_bg};color:{badge_color}">{badge_text}</span>'
+            f'<span style="font-family:\'JetBrains Mono\',monospace;font-size:0.72rem;'
+            f'color:rgba(232,230,225,0.4);width:38px;text-align:right;flex-shrink:0">'
+            f'{b["percentage"]:.0f}%</span>'
+            f'<div style="width:60px;height:4px;background:rgba(255,255,255,0.06);'
+            f'border-radius:4px;overflow:hidden;flex-shrink:0">'
+            f'<div style="width:{pct}%;height:100%;background:{bar_color};border-radius:4px">'
+            f'</div></div></div>'
+        )
 
-    return f"""
-    <div class="fb-breakdown-wrap">
-        <div class="fb-breakdown-title">Budget breakdown — this month</div>
-        {''.join(rows)}
-    </div>"""
+    rows_html = "".join(rows)
+    return (
+        f'<div style="margin-top:6px">'
+        f'<div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.8px;'
+        f'color:rgba(232,230,225,0.4);margin-bottom:10px;font-family:Inter,sans-serif">'
+        f'Budget breakdown — this month</div>'
+        f'{rows_html}'
+        f'</div>'
+    )
 
 
 def _safe_text(text: str) -> str:
