@@ -68,13 +68,21 @@ def _is_breakdown_msg(msg: dict) -> bool:
 
 
 def _strip_stale_breakdowns(messages: list) -> list:
-    """Remove assistant messages that contain breakdown HTML.
-    Called when loading history from the DB — we always inject a fresh
-    breakdown at render time, so stored ones are redundant and may render
-    as raw text if they lack the 'type' key."""
+    """Remove breakdown assistant messages that lack the 'type' key.
+
+    DB-loaded rows never carry 'type'; without it _render_chat falls
+    through to _safe_text() which HTML-escapes the tags, showing raw
+    markup to the user.  Fresh in-memory rows (type=='breakdown') are
+    preserved so we don't double-inject on every rerun.
+
+    Safe to call on every Streamlit rerun, not just at login."""
     return [
         m for m in messages
-        if not (m.get("role") == "assistant" and _is_breakdown_msg(m))
+        if not (
+            m.get("role") == "assistant"
+            and m.get("type") != "breakdown"   # keep correctly-typed rows
+            and _BREAKDOWN_SENTINEL in m.get("content", "")
+        )
     ]
 
 
@@ -305,6 +313,12 @@ if "messages"      not in st.session_state: st.session_state.messages      = _we
 if "pending_audio" not in st.session_state: st.session_state.pending_audio = None
 if "last_latency"  not in st.session_state: st.session_state.last_latency  = None
 if "undo_expense"  not in st.session_state: st.session_state.undo_expense  = None
+
+# Strip stale breakdown rows on EVERY rerun (not just login).
+# This catches rows that survived in session state from a previous code
+# deployment, a page refresh without sign-out, or any other path that
+# bypasses _init_session.  Fresh typed rows (type=="breakdown") are kept.
+st.session_state.messages = _strip_stale_breakdowns(st.session_state.messages)
 
 
 # ── Core pipeline ──────────────────────────────────────────────
