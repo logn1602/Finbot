@@ -55,15 +55,27 @@ LANG_LABELS = {
 }
 
 
-_BREAKDOWN_SENTINEL = '<div class="fb-breakdown-wrap">'
+_BREAKDOWN_SENTINEL = 'fb-breakdown-wrap'
 
 def _is_breakdown_msg(msg: dict) -> bool:
     """True for breakdown messages whether they came from session state or the DB.
-    DB rows have no 'type' key, so we detect by HTML content shape instead."""
+    DB rows have no 'type' key, so we detect by the CSS class name anywhere in
+    the content — 'in' is robust to whatever prefix the stored HTML may have."""
     return (
         msg.get("type") == "breakdown"
-        or msg.get("content", "").strip().startswith(_BREAKDOWN_SENTINEL)
+        or _BREAKDOWN_SENTINEL in msg.get("content", "")
     )
+
+
+def _strip_stale_breakdowns(messages: list) -> list:
+    """Remove assistant messages that contain breakdown HTML.
+    Called when loading history from the DB — we always inject a fresh
+    breakdown at render time, so stored ones are redundant and may render
+    as raw text if they lack the 'type' key."""
+    return [
+        m for m in messages
+        if not (m.get("role") == "assistant" and _is_breakdown_msg(m))
+    ]
 
 
 def _category_breakdown_html(budget_status: list) -> str:
@@ -232,7 +244,10 @@ def _init_session(session) -> None:
     st.session_state.access_token = session.access_token
     seed_default_budgets(session.user.id, session.access_token)
     from finance.database import ChatHistory
-    history = ChatHistory().load_history()
+    raw_history = ChatHistory().load_history()
+    # Drop any breakdown HTML rows — they render as raw text without the 'type' key
+    # and we always inject a fresh breakdown at render time anyway.
+    history = _strip_stale_breakdowns(raw_history)
     st.session_state.messages     = history if history else _welcome_messages()
     st.session_state.pending_audio = None
     st.session_state.last_latency  = None
