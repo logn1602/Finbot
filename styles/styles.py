@@ -148,27 +148,28 @@ section[data-testid="stSidebar"] > div { padding-top: 0 !important; }
 .fb-scard-warning { color: var(--warning) !important; }
 .fb-scard-danger  { color: var(--danger)  !important; }
 
-/* ── Sticky header + breakdown zone ─────────────────────────── */
-/* Let position:sticky propagate through Streamlit's wrapper divs  */
-.main .block-container {
-    overflow: visible !important;
-    padding-top: 1rem !important;
-}
-div[data-testid="stVerticalBlock"],
-div[data-testid="element-container"],
-div[data-testid="stMarkdownContainer"] {
-    overflow: visible !important;
-}
+/* ── Fixed header + breakdown zone ──────────────────────────── */
+/* position:sticky doesn't propagate through Streamlit's wrapper divs.
+   position:fixed always works — it's relative to the viewport, not
+   any ancestor.  We offset left by the default Streamlit sidebar
+   width (21rem / 336px) so it aligns with the main content area.    */
 
 .fb-sticky-zone {
-    position: -webkit-sticky;
-    position: sticky;
+    position: fixed;
     top: 0;
+    left: 21rem;          /* default Streamlit expanded-sidebar width */
+    right: 0;
     z-index: 200;
     background: var(--bg);
-    padding-bottom: 12px;
+    padding: 10px 2.5rem 14px;
     border-bottom: 1px solid var(--border);
-    margin-bottom: 10px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.45);
+}
+
+/* Push main content down so nothing hides behind the fixed zone.
+   ~48px header + 8 rows × ~28px + title + padding ≈ 300px          */
+.main .block-container {
+    padding-top: 300px !important;
 }
 
 /* ── Main header ─────────────────────────────────────────────── */
