@@ -148,12 +148,35 @@ section[data-testid="stSidebar"] > div { padding-top: 0 !important; }
 .fb-scard-warning { color: var(--warning) !important; }
 .fb-scard-danger  { color: var(--danger)  !important; }
 
+/* ── Sticky header + breakdown zone ─────────────────────────── */
+/* Let position:sticky propagate through Streamlit's wrapper divs  */
+.main .block-container {
+    overflow: visible !important;
+    padding-top: 1rem !important;
+}
+div[data-testid="stVerticalBlock"],
+div[data-testid="element-container"],
+div[data-testid="stMarkdownContainer"] {
+    overflow: visible !important;
+}
+
+.fb-sticky-zone {
+    position: -webkit-sticky;
+    position: sticky;
+    top: 0;
+    z-index: 200;
+    background: var(--bg);
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 10px;
+}
+
 /* ── Main header ─────────────────────────────────────────────── */
 .fb-header {
     display: flex;
     align-items: baseline;
     gap: 12px;
-    margin-bottom: 2px;
+    margin-bottom: 8px;
     padding-top: 8px;
 }
 .fb-header-title {

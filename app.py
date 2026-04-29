@@ -491,24 +491,19 @@ with st.sidebar:
 
 
 # ── Main area ──────────────────────────────────────────────────
-
-# Header
-st.markdown(f"""
-<div class="fb-header">
-    <span class="fb-header-title">FinBot</span>
-    <span class="fb-header-sub">your AI financial advisor</span>
-</div>
-""", unsafe_allow_html=True)
-
-# ── Inject breakdown as first bot message if data exists & not yet injected ──
-# _is_breakdown_msg handles both in-memory (type key) and DB-loaded (HTML shape) rows.
-if active_budgets and not any(_is_breakdown_msg(m) for m in st.session_state.messages):
-    breakdown_html = _category_breakdown_html(budget_status)
-    st.session_state.messages.append({
-        "role":    "assistant",
-        "content": breakdown_html,
-        "type":    "breakdown",
-    })
+# Header + budget breakdown rendered together in a sticky zone so both
+# remain visible while the chat scrolls below them.
+_bd_html = _category_breakdown_html(budget_status) if active_budgets else ""
+st.markdown(
+    f'<div class="fb-sticky-zone">'
+    f'<div class="fb-header">'
+    f'<span class="fb-header-title">FinBot</span>'
+    f'<span class="fb-header-sub">your AI financial advisor</span>'
+    f'</div>'
+    f'{_bd_html}'
+    f'</div>',
+    unsafe_allow_html=True,
+)
 
 # ── Chat messages ──────────────────────────────────────────────
 _render_chat(st.session_state.messages)
@@ -546,7 +541,6 @@ CHIPS = [
     ("📊", "How much did I spend today?"),
     ("🎯", "Am I within my budget?"),
     ("💡", "Give me a savings tip"),
-    ("📋", "Show breakdown"),
 ]
 
 st.markdown('<div class="fb-chips-row">', unsafe_allow_html=True)
@@ -555,15 +549,7 @@ for i, (icon, label) in enumerate(CHIPS):
     with chip_cols[i]:
         st.markdown('<div data-testid="fb-chip">', unsafe_allow_html=True)
         if st.button(f"{icon} {label}", key=f"chip_{i}"):
-            if label == "Show breakdown":
-                # Re-inject fresh breakdown into chat
-                breakdown_html = _category_breakdown_html(analyzer.get_budget_status())
-                st.session_state.messages.append({
-                    "role": "assistant", "content": breakdown_html, "type": "breakdown"
-                })
-                st.rerun()
-            else:
-                _dispatch(f"{icon} {label}")
+            _dispatch(f"{icon} {label}")
         st.markdown('</div>', unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
