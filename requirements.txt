@@ -11,3 +11,4 @@ streamlit-mic-recorder
 supabase>=2.0.0
 tzlocal>=4.0
 streamlit-js-eval>=0.1.9
+pytest>=7.0.0
