@@ -339,22 +339,6 @@ if "undo_expense"  not in st.session_state: st.session_state.undo_expense  = Non
 # bypasses _init_session.  Fresh typed rows (type=="breakdown") are kept.
 st.session_state.messages = _strip_stale_breakdowns(st.session_state.messages)
 
-# ── Temporary debug panel (remove after diagnosis) ────────────
-if os.getenv("FINBOT_DEBUG", "0") == "1":
-    with st.expander("🔍 Debug — message list", expanded=False):
-        for i, m in enumerate(st.session_state.messages):
-            role    = m.get("role", "?")
-            mtype   = m.get("type", "—")
-            content = m.get("content", "")
-            is_bd   = _is_breakdown_msg(m)
-            preview = repr(content[:120])
-            st.markdown(
-                f"`[{i}]` **{role}** | type=`{mtype}` | is_breakdown=`{is_bd}`  \n"
-                f"content preview: `{preview}`",
-                unsafe_allow_html=False,
-            )
-
-
 # ── Core pipeline ──────────────────────────────────────────────
 
 def process_user_input(user_text: str, language: str = None, stt_ms: float = 0.0) -> dict:
