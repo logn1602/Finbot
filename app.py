@@ -322,7 +322,23 @@ def init_tts():   return TextToSpeech(default_lang="en", gender="male")
 @st.cache_resource
 def init_brain(): return FinanceBrain()
 
+@st.cache_resource
+def ensure_rag_ingested():
+    """Auto-ingest knowledge base into ChromaDB on first startup if empty."""
+    try:
+        from rag.retriever import FinanceRetriever
+        retriever = FinanceRetriever()
+        if retriever.is_empty:
+            from rag.ingest import ingest_knowledge_base
+            stats = ingest_knowledge_base()
+            print(f"[RAG] Auto-ingested: {stats.get('total_chunks', 0)} chunks")
+        else:
+            print(f"[RAG] Collection ready: {retriever.chunk_count} chunks")
+    except Exception as e:
+        print(f"[RAG] Auto-ingestion skipped: {e}")
+
 brain        = init_brain()
+ensure_rag_ingested()
 tracker      = ExpenseTracker()
 analyzer     = BudgetAnalyzer()
 chat_history = ChatHistory()
