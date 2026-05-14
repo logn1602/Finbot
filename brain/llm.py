@@ -1,6 +1,7 @@
 """
 LLM Brain - Intent Classification + Multilingual Response Generation
 Uses Groq API (free tier) with Llama 3.3 70B
+Integrates RAG retrieval for advice and query intents.
 """
 
 import os
@@ -64,7 +65,11 @@ Respond ONLY with valid JSON, no markdown, no backticks:
 }""")
 
 
-# Dynamic prompt — {detected_language} and {financial_context} are filled at runtime.
+# Intents that benefit from RAG-retrieved financial knowledge
+RAG_INTENTS = {"get_advice", "query_balance"}
+
+# Dynamic prompt — {detected_language}, {financial_context}, and {rag_context}
+# are filled at runtime.
 ADVISOR_PROMPT = PromptTemplate(system="""\
 You are FinBot, a friendly AI financial advisor voice assistant.
 
@@ -91,7 +96,8 @@ RULES:
 - NEVER respond in English if the user spoke in another language
 - NEVER use markdown formatting. No asterisks, no backticks, no bullet points with - or *, no # headers. Write plain conversational sentences only.
 
-{financial_context}""")
+{financial_context}
+{rag_context}""")
 
 
 # Language code → friendly name injected into the advisor prompt
@@ -134,6 +140,31 @@ class FinanceBrain:
         self.conversation_history = []
         self.model = "llama-3.3-70b-versatile"
 
+        # Lazy-loaded RAG retriever — only created on first advice/query call
+        self._retriever = None
+
+    @property
+    def retriever(self):
+        """Lazy-load the FinanceRetriever (avoids import cost on every startup)."""
+        if self._retriever is None:
+            try:
+                from rag.retriever import FinanceRetriever
+                self._retriever = FinanceRetriever()
+            except Exception as e:
+                print(f"RAG retriever unavailable: {e}")
+        return self._retriever
+
+    def _get_rag_context(self, user_message: str) -> str:
+        """Retrieve relevant knowledge chunks for the user's message."""
+        if self.retriever is None:
+            return ""
+        try:
+            context = self.retriever.format_context(user_message, top_k=3)
+            return context
+        except Exception as e:
+            print(f"RAG retrieval error: {e}")
+            return ""
+
     def classify_intent(self, user_message: str) -> dict:
         """Classify intent + detect language — works regardless of input language."""
         try:
@@ -154,12 +185,14 @@ class FinanceBrain:
             print(f"Intent classification error: {e}")
             return {"intent": "get_advice", "entities": {}, "confidence": 0.3, "language": "en"}
 
-    def generate_response(self, user_message: str, financial_context: str = "", language: str = "en") -> str:
+    def generate_response(self, user_message: str, financial_context: str = "",
+                          language: str = "en", rag_context: str = "") -> str:
         """Generate a response in the same language the user spoke in."""
         lang_name = LANG_NAMES.get(language, language)
         system_prompt = ADVISOR_PROMPT.render(
             detected_language=lang_name,
             financial_context=financial_context,
+            rag_context=rag_context,
         )
 
         self.conversation_history.append({"role": "user", "content": user_message})
@@ -184,15 +217,29 @@ class FinanceBrain:
         """
         Full pipeline: classify intent (+ detect language) → generate response.
 
+        RAG retrieval is intent-gated: only triggered for advice and query
+        intents to avoid unnecessary latency on simple actions like logging
+        an expense or greeting.
+
         language: if provided by Whisper, it takes precedence over LLM detection.
         """
         intent_data = self.classify_intent(user_message)
-        print(f"  Intent: {intent_data['intent']} (confidence: {intent_data.get('confidence', 'N/A')})")
+        intent_name = intent_data.get("intent", "get_advice")
+        print(f"  Intent: {intent_name} (confidence: {intent_data.get('confidence', 'N/A')})")
 
         detected_language = language or intent_data.get("language", "en")
         print(f"  Language: {detected_language}")
 
-        response = self.generate_response(user_message, financial_context, detected_language)
+        # Intent-gated RAG: only fetch knowledge for advice/query intents
+        rag_context = ""
+        if intent_name in RAG_INTENTS:
+            rag_context = self._get_rag_context(user_message)
+            if rag_context:
+                print(f"  RAG: injected knowledge context ({len(rag_context)} chars)")
+
+        response = self.generate_response(
+            user_message, financial_context, detected_language, rag_context
+        )
 
         return {
             "intent": intent_data,
