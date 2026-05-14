@@ -31,12 +31,22 @@ flowchart TD
         D -->|intent + entities + language| R
     end
 
+    subgraph rag [📚 RAG Pipeline]
+        KB[Knowledge Base\n8 Curated Articles]
+        EMB[Sentence-Transformers\nMultilingual MiniLM]
+        VDB[(ChromaDB\nVector Store)]
+        KB -->|chunked + embedded| VDB
+        EMB -->|384-dim vectors| VDB
+    end
+
     subgraph db [🗄️ Supabase]
         G[(Expenses)]
         H[(Budgets)]
         I[(Chat History)]
     end
 
+    D -->|advice / query intent| VDB
+    VDB -->|relevant knowledge chunks| R
     H -->|monthly budget context| R
     G -->|spending snapshot| R
     R -->|add_expense| G
@@ -56,7 +66,8 @@ flowchart TD
 1. **Speak or type** — the browser mic captures your voice, or you type directly
 2. **Whisper transcribes** — Groq's Whisper Large V3 converts speech to text and detects your language automatically
 3. **Llama reasons** — Llama 3.3 70B classifies your intent, extracts entities (amount, category, date), and loads your live financial context from Supabase
-4. **Action is taken** — expense logged / budget updated / advice generated
+4. **RAG enhances** — for advice and query intents, relevant personal-finance knowledge is retrieved from a local ChromaDB vector store and injected into the prompt
+5. **Action is taken** — expense logged / budget updated / advice generated
 5. **You hear the response** — Edge-TTS synthesises audio in your detected language and plays it back
 
 **End-to-end latency: ~3–5 seconds**
@@ -70,6 +81,7 @@ flowchart TD
 | 🎤 Voice-first UX | Speak naturally — no forms, no dropdowns |
 | 🌍 20+ Languages | Auto-detects Hindi, Tamil, Spanish, French, Japanese, and more — responds in kind |
 | 🧠 Intent Engine | Classifies: `add_expense` · `query_balance` · `get_advice` · `set_budget` · `greeting` |
+| 📚 RAG Knowledge | Retrieves curated personal-finance advice (budgeting, saving, debt, investing, tax, insurance) via ChromaDB — intent-gated so only advice/query intents pay the retrieval cost |
 | 📊 Live Dashboard | Spending trends (7-day), category breakdown donut chart, budget progress bars |
 | ⚠️ Budget Alerts | Flags categories as `OVER` / `WARNING` / `ON TRACK` with end-of-month projections |
 | 💬 Conversation Memory | Retains last 20 messages for coherent multi-turn dialogue |
@@ -87,6 +99,8 @@ flowchart TD
 | Speech-to-Text | Groq Whisper Large V3 | 90+ language support on the same Groq key — no extra API or GPU required |
 | Text-to-Speech | Microsoft Edge-TTS | No API key needed, 20+ language-matched neural voices, async — adds near-zero latency |
 | Auth + Database | Supabase | Row-level security enforces user data isolation at the DB layer, not in app code |
+| RAG Embeddings | sentence-transformers (MiniLM-L12-v2) | 384-dim multilingual embeddings, CPU-only, zero cost — supports 50+ languages |
+| Vector Store | ChromaDB | Persistent local vector DB — no server, auto-ingests on first startup |
 | Visualisation | Plotly + Pandas | Interactive charts without adding a separate frontend framework |
 
 > **Total cost to run: $0** — every layer runs on free tiers, no GPU required.
@@ -97,20 +111,37 @@ flowchart TD
 
 ```
 Finbot/
-├── app.py                     # Streamlit UI + pipeline orchestration
+├── app.py                     # Streamlit UI + pipeline orchestration + auto-ingestion
 ├── auth/
 │   └── auth.py                # Supabase login, signup, session, default budget seeding
 ├── brain/
-│   └── llm.py                 # Intent classification, entity extraction, LLM response
+│   └── llm.py                 # Intent classification, entity extraction, RAG-augmented response
 ├── finance/
 │   └── database.py            # ExpenseTracker, BudgetAnalyzer, ChatHistory — Supabase queries
 ├── voice/
 │   ├── stt.py                 # Speech-to-text (Groq Whisper + local offline fallback)
 │   └── tts.py                 # Text-to-speech (Edge-TTS, async, 20+ language voices)
+├── knowledge/                 # Curated personal-finance knowledge base (8 articles)
+│   ├── 01_budgeting_basics.md
+│   ├── 02_saving_strategies.md
+│   ├── 03_debt_management.md
+│   ├── 04_investing_fundamentals.md
+│   ├── 05_tax_basics.md
+│   ├── 06_insurance_essentials.md
+│   ├── 07_financial_planning.md
+│   └── 08_common_money_mistakes.md
+├── rag/                       # RAG pipeline
+│   ├── embeddings.py          # Multilingual MiniLM embedding model (384-dim, CPU)
+│   ├── retriever.py           # ChromaDB-backed retriever with cosine similarity
+│   └── ingest.py              # Markdown chunking + ingestion (CLI + programmatic)
+├── evals/                     # RAG evaluation pipeline
+│   ├── test_cases.json        # 56 test cases across 9 categories
+│   └── run_eval.py            # Hit rate, topic coverage, MRR, mean score metrics
 ├── tests/
 │   ├── test_llm.py            # Intent classification + language detection tests
 │   ├── test_database.py       # Financial context generation tests
-│   └── test_tts.py            # Voice selection tests
+│   ├── test_tts.py            # Voice selection tests
+│   └── test_rag.py            # Embedding, retriever, chunking, ingestion tests (25 tests)
 └── ARCHITECTURE.md            # Design decisions and trade-off rationale
 ```
 
@@ -142,6 +173,9 @@ SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 
 ```bash
+# (Optional) Pre-ingest the knowledge base — or let the app auto-ingest on first launch
+python -m rag.ingest
+
 streamlit run app.py
 # Opens at http://localhost:8501
 ```
@@ -194,6 +228,40 @@ Language is **auto-detected** from your voice or text — no manual selection ne
 - **Category breakdown** donut chart
 - **7-day spending trend** line chart
 - **Smart insights** — overspending alerts, spending spikes, top category callouts
+
+---
+
+## RAG: Knowledge-Augmented Advice
+
+FinBot uses Retrieval-Augmented Generation (RAG) to ground its financial advice in curated, accurate content rather than relying solely on the LLM's training data.
+
+**How it works:**
+
+1. Eight personal-finance articles (budgeting, saving, debt, investing, tax, insurance, planning, common mistakes) are chunked into ~139 overlapping segments
+2. Each chunk is embedded using `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` (384-dim, multilingual, CPU-only)
+3. Embeddings are stored in a local ChromaDB persistent collection
+4. When the user asks for advice or queries their finances, the most relevant chunks are retrieved via cosine similarity and injected into the LLM prompt
+5. Other intents (logging expenses, greetings) skip retrieval entirely for zero added latency
+
+**Evaluation results (56 test cases):**
+
+| Metric | Score |
+|--------|-------|
+| Hit Rate | 98.2% |
+| Topic Coverage | 85.3% |
+| Mean Relevance Score | 0.78 |
+| MRR | 0.88 |
+
+```bash
+# Re-ingest after editing knowledge files
+python -m rag.ingest --force
+
+# Run evaluation
+python -m evals.run_eval --verbose
+
+# Run unit tests
+python -m pytest tests/test_rag.py -v
+```
 
 ---
 
