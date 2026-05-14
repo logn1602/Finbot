@@ -89,6 +89,76 @@ The trade-off: Streamlit reruns the entire script on every interaction. This is 
 
 ---
 
+## RAG: Retrieval-Augmented Generation
+
+### Why RAG?
+
+LLMs are excellent at conversation but unreliable for domain-specific financial advice. Without grounding, the model may hallucinate rules of thumb, invent tax brackets, or give advice that contradicts established personal-finance best practices. RAG anchors responses in curated, verified content.
+
+### Architecture Decisions
+
+**Embedding model: `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`**
+
+| Alternative | Why not |
+|---|---|
+| OpenAI `text-embedding-3-small` | Paid API, violates zero-cost constraint |
+| `all-MiniLM-L6-v2` | English-only — FinBot is multilingual |
+| `e5-large-v2` | 1024-dim, ~1.3GB — too heavy for Streamlit Cloud's limited RAM |
+| `paraphrase-multilingual-MiniLM-L12-v2` | **384-dim, ~120MB, 50+ languages, CPU-friendly, zero cost** |
+
+The multilingual capability matters because a user asking "mujhe paisa kaise bachana chahiye" (Hindi for "how should I save money") should retrieve the same saving-strategies chunks as the English equivalent. A monolingual embedding model would miss this entirely.
+
+**Vector store: ChromaDB (persistent, local)**
+
+| Alternative | Why not |
+|---|---|
+| Pinecone / Weaviate | Hosted services — free tiers have limits, adds external dependency |
+| FAISS | No built-in persistence, requires manual serialization |
+| PostgreSQL pgvector (Supabase) | Would work but adds embedding storage to the user-data DB, mixing concerns |
+| ChromaDB | **Local persistent storage, no server, pip-installable, cosine similarity built-in** |
+
+ChromaDB stores its data in `chroma_db/` (gitignored). On a fresh deploy, the app auto-ingests from `knowledge/` on first startup. This means `chroma_db/` is a derived artifact — the source of truth is always the markdown files.
+
+**Knowledge base: curated markdown articles**
+
+The knowledge base is 8 hand-written articles (~800–1500 words each) covering budgeting, saving, debt management, investing fundamentals, tax basics, insurance essentials, financial planning, and common money mistakes.
+
+Why curated content over scraping or using a pre-existing corpus:
+- **Quality control** — every claim is verified, no outdated or region-specific advice sneaks in
+- **Chunk-friendly** — articles are structured with `##` headings, making section-aware chunking natural
+- **Maintainable** — adding or updating a topic means editing one markdown file and re-running `python -m rag.ingest --force`
+- **No licensing issues** — original content, no copyright concerns
+
+**Chunking strategy: section-aware with overlap**
+
+Chunks are split hierarchically: first on `##` headings (preserving topic boundaries), then on paragraph breaks, then on sentence boundaries for oversized paragraphs. Each chunk targets ~600 characters with 100 characters of overlap between consecutive chunks.
+
+Why not fixed-size character splitting? A naive 500-char split would cut mid-sentence and mid-topic, producing chunks where the retrieved text lacks enough context to be useful. Section-aware splitting keeps each chunk semantically coherent.
+
+**Intent-gated retrieval**
+
+RAG is only triggered for `get_advice` and `query_balance` intents. Other intents (`add_expense`, `set_budget`, `greeting`, `goodbye`) skip retrieval entirely.
+
+Why gate on intent:
+- **Latency** — embedding + vector search adds ~100–300ms. Acceptable for advice, unnecessary for "I spent 500 on food"
+- **Relevance** — injecting financial-planning knowledge into a simple expense-logging confirmation would confuse the LLM and produce unnecessarily long responses
+- **Token budget** — retrieved chunks consume prompt tokens. Wasting them on non-advice intents reduces the space available for conversation history
+
+### Evaluation
+
+The RAG pipeline is evaluated with 56 test cases across 9 categories (budgeting, saving, debt, investing, tax, insurance, planning, mistakes, cross-topic). Evaluation is retrieval-only — no LLM calls required, making it free and fast to run.
+
+| Metric | Score | Definition |
+|---|---|---|
+| Hit Rate | 98.2% | At least one chunk from the expected source file was retrieved |
+| Topic Coverage | 85.3% | Fraction of expected keywords found in retrieved chunks |
+| Mean Relevance | 0.78 | Average cosine similarity of retrieved chunks |
+| MRR | 0.88 | Mean reciprocal rank of the first relevant result |
+
+The single miss (1 of 56) is a cross-topic query where the expected sources are spread across multiple files — the retriever finds relevant content from adjacent topics instead.
+
+---
+
 ## Data Flow Sequence
 
 ```
@@ -96,7 +166,8 @@ User speaks
   → [stt.py] transcribe_bytes()         # ~0.5–1.5s (Groq Whisper)
   → [database.py] generate_context_for_llm()  # ~50ms (Supabase query)
   → [llm.py] classify_intent()          # ~0.3–0.5s (Groq Llama, low temp)
-  → [llm.py] generate_response()        # ~0.5–1.0s (Groq Llama)
+  → [retriever.py] query() (advice/query intents only)  # ~100–300ms (ChromaDB)
+  → [llm.py] generate_response()        # ~0.5–1.0s (Groq Llama + RAG context)
   → [database.py] add_expense() / set_budget() / save_message()  # ~50ms
   → [tts.py] generate_file()            # ~0.3–0.8s (Edge-TTS async)
   → st.audio(autoplay=True)             # browser plays response
@@ -130,3 +201,5 @@ Language detection flows from Whisper (most reliable source, since it's trained 
 - **Streaming responses** — Streamlit's `st.write_stream()` is available, but streaming conflicts with the TTS step (you can't synthesise audio until the full response is known). A future architecture could stream text first, then generate audio for the complete response.
 - **Receipt/image parsing** — vision models (GPT-4V, LLaVA) could parse receipts, but this would require a paid API or a GPU for local inference, violating the zero-cost constraint.
 - **Bank integration** — Plaid and similar APIs are paid and require KYC compliance, out of scope for an academic project.
+- **User-specific RAG** — the knowledge base is shared across all users (general financial advice). A future extension could embed each user's transaction history for personalised retrieval, but this raises privacy and storage scaling concerns.
+- **LLM-as-judge evaluation** — the eval pipeline measures retrieval quality only. Adding LLM-based answer scoring (e.g., "was the generated advice accurate?") would require paid API calls or a local judge model, conflicting with the zero-cost constraint.
