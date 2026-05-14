@@ -24,5 +24,11 @@ venv/
 .DS_Store
 Thumbs.db
 
-Streamlit files
+# Streamlit files
 .streamlit/secrets.toml
+
+# ChromaDB persistent storage (rebuilt from knowledge/ via rag.ingest)
+chroma_db/
+
+# Hugging Face model cache
+.cache/
