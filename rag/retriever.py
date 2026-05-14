@@ -111,6 +111,7 @@ class FinanceRetriever:
                 chunks.append({
                     "text": doc,
                     "source": meta.get("source", "unknown"),
+                    "file": meta.get("file", ""),
                     "score": round(score, 4),
                 })
 

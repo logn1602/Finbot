@@ -1,0 +1,394 @@
+[
+    {
+        "id": "budget_01",
+        "query": "How do I create a budget?",
+        "expected_topics": ["budget", "50/30/20", "income", "expenses", "plan"],
+        "expected_sources": ["01_budgeting_basics.md"],
+        "category": "budgeting"
+    },
+    {
+        "id": "budget_02",
+        "query": "What is zero-based budgeting?",
+        "expected_topics": ["zero-based", "every dollar", "income minus expenses", "assigned"],
+        "expected_sources": ["01_budgeting_basics.md"],
+        "category": "budgeting"
+    },
+    {
+        "id": "budget_03",
+        "query": "What is the 50/30/20 rule?",
+        "expected_topics": ["50", "30", "20", "needs", "wants", "savings"],
+        "expected_sources": ["01_budgeting_basics.md"],
+        "category": "budgeting"
+    },
+    {
+        "id": "budget_04",
+        "query": "How do I budget with irregular income?",
+        "expected_topics": ["irregular", "freelance", "baseline", "buffer", "variable"],
+        "expected_sources": ["01_budgeting_basics.md"],
+        "category": "budgeting"
+    },
+    {
+        "id": "budget_05",
+        "query": "What are common budgeting mistakes?",
+        "expected_topics": ["unrealistic", "irregular expenses", "fun money", "giving up"],
+        "expected_sources": ["01_budgeting_basics.md"],
+        "category": "budgeting"
+    },
+    {
+        "id": "budget_06",
+        "query": "What is the envelope method for budgeting?",
+        "expected_topics": ["envelope", "cash", "category", "empty"],
+        "expected_sources": ["01_budgeting_basics.md"],
+        "category": "budgeting"
+    },
+    {
+        "id": "saving_01",
+        "query": "How much should I save for emergencies?",
+        "expected_topics": ["emergency", "three", "six", "months", "expenses"],
+        "expected_sources": ["02_saving_strategies.md"],
+        "category": "saving"
+    },
+    {
+        "id": "saving_02",
+        "query": "What is the pay yourself first strategy?",
+        "expected_topics": ["pay yourself first", "automatic", "transfer", "payday"],
+        "expected_sources": ["02_saving_strategies.md"],
+        "category": "saving"
+    },
+    {
+        "id": "saving_03",
+        "query": "How can I reduce my expenses to save more?",
+        "expected_topics": ["housing", "transportation", "food", "reduce", "cut"],
+        "expected_sources": ["02_saving_strategies.md"],
+        "category": "saving"
+    },
+    {
+        "id": "saving_04",
+        "query": "What is a savings waterfall?",
+        "expected_topics": ["employer match", "debt", "retirement", "priority"],
+        "expected_sources": ["02_saving_strategies.md"],
+        "category": "saving"
+    },
+    {
+        "id": "saving_05",
+        "query": "What are some fun savings challenges?",
+        "expected_topics": ["52-week", "round-up", "no-spend", "challenge"],
+        "expected_sources": ["02_saving_strategies.md"],
+        "category": "saving"
+    },
+    {
+        "id": "saving_06",
+        "query": "Where should I keep my emergency fund?",
+        "expected_topics": ["high-yield", "savings account", "liquid", "separate"],
+        "expected_sources": ["02_saving_strategies.md"],
+        "category": "saving"
+    },
+    {
+        "id": "debt_01",
+        "query": "What is the debt avalanche method?",
+        "expected_topics": ["avalanche", "highest interest", "minimum", "mathematically"],
+        "expected_sources": ["03_debt_management.md"],
+        "category": "debt"
+    },
+    {
+        "id": "debt_02",
+        "query": "What is the debt snowball method?",
+        "expected_topics": ["snowball", "smallest balance", "momentum", "psychological"],
+        "expected_sources": ["03_debt_management.md"],
+        "category": "debt"
+    },
+    {
+        "id": "debt_03",
+        "query": "Should I consolidate my debt?",
+        "expected_topics": ["consolidation", "balance transfer", "lower interest", "single loan"],
+        "expected_sources": ["03_debt_management.md"],
+        "category": "debt"
+    },
+    {
+        "id": "debt_04",
+        "query": "How do I negotiate with creditors?",
+        "expected_topics": ["negotiate", "lower interest rate", "hardship", "call"],
+        "expected_sources": ["03_debt_management.md"],
+        "category": "debt"
+    },
+    {
+        "id": "debt_05",
+        "query": "What is good debt versus bad debt?",
+        "expected_topics": ["productive", "destructive", "mortgage", "credit card", "appreciat"],
+        "expected_sources": ["03_debt_management.md"],
+        "category": "debt"
+    },
+    {
+        "id": "debt_06",
+        "query": "How does debt affect my credit score?",
+        "expected_topics": ["credit score", "payment history", "utilization", "30"],
+        "expected_sources": ["03_debt_management.md"],
+        "category": "debt"
+    },
+    {
+        "id": "debt_07",
+        "query": "How should I handle student loan debt?",
+        "expected_topics": ["student loan", "income-driven", "forgiveness", "refinanc"],
+        "expected_sources": ["03_debt_management.md"],
+        "category": "debt"
+    },
+    {
+        "id": "invest_01",
+        "query": "What is compound interest?",
+        "expected_topics": ["compound", "returns on returns", "growth", "time"],
+        "expected_sources": ["04_investing_fundamentals.md"],
+        "category": "investing"
+    },
+    {
+        "id": "invest_02",
+        "query": "What are index funds?",
+        "expected_topics": ["index fund", "track", "market", "low cost", "passive"],
+        "expected_sources": ["04_investing_fundamentals.md"],
+        "category": "investing"
+    },
+    {
+        "id": "invest_03",
+        "query": "What is dollar cost averaging?",
+        "expected_topics": ["dollar-cost", "fixed amount", "regular", "regardless"],
+        "expected_sources": ["04_investing_fundamentals.md"],
+        "category": "investing"
+    },
+    {
+        "id": "invest_04",
+        "query": "How should I diversify my portfolio?",
+        "expected_topics": ["diversif", "stocks", "bonds", "spread", "asset class"],
+        "expected_sources": ["04_investing_fundamentals.md"],
+        "category": "investing"
+    },
+    {
+        "id": "invest_05",
+        "query": "What are the different asset classes?",
+        "expected_topics": ["stocks", "bonds", "real estate", "cash"],
+        "expected_sources": ["04_investing_fundamentals.md"],
+        "category": "investing"
+    },
+    {
+        "id": "invest_06",
+        "query": "What are common investing mistakes?",
+        "expected_topics": ["timing", "panic sell", "fees", "concentrat"],
+        "expected_sources": ["04_investing_fundamentals.md"],
+        "category": "investing"
+    },
+    {
+        "id": "invest_07",
+        "query": "How do I start investing as a beginner?",
+        "expected_topics": ["goal", "open", "account", "automate", "simple"],
+        "expected_sources": ["04_investing_fundamentals.md"],
+        "category": "investing"
+    },
+    {
+        "id": "tax_01",
+        "query": "How do tax brackets work?",
+        "expected_topics": ["progressive", "bracket", "marginal", "effective"],
+        "expected_sources": ["05_tax_basics.md"],
+        "category": "tax"
+    },
+    {
+        "id": "tax_02",
+        "query": "What is the difference between tax deductions and credits?",
+        "expected_topics": ["deduction", "credit", "taxable income", "dollar for dollar"],
+        "expected_sources": ["05_tax_basics.md"],
+        "category": "tax"
+    },
+    {
+        "id": "tax_03",
+        "query": "What is tax loss harvesting?",
+        "expected_topics": ["loss", "harvest", "offset", "capital gain", "wash"],
+        "expected_sources": ["05_tax_basics.md"],
+        "category": "tax"
+    },
+    {
+        "id": "tax_04",
+        "query": "What are capital gains taxes?",
+        "expected_topics": ["capital gain", "short-term", "long-term", "one year"],
+        "expected_sources": ["05_tax_basics.md"],
+        "category": "tax"
+    },
+    {
+        "id": "tax_05",
+        "query": "What tax advantages does a Roth IRA have?",
+        "expected_topics": ["Roth", "tax-free", "withdrawal", "retirement", "after-tax"],
+        "expected_sources": ["05_tax_basics.md"],
+        "category": "tax"
+    },
+    {
+        "id": "tax_06",
+        "query": "What are self-employment tax considerations?",
+        "expected_topics": ["self-employ", "15.3", "deduct", "quarterly"],
+        "expected_sources": ["05_tax_basics.md"],
+        "category": "tax"
+    },
+    {
+        "id": "insurance_01",
+        "query": "Do I need life insurance?",
+        "expected_topics": ["life insurance", "term", "income", "dependents"],
+        "expected_sources": ["06_insurance_essentials.md"],
+        "category": "insurance"
+    },
+    {
+        "id": "insurance_02",
+        "query": "What is the difference between term and whole life insurance?",
+        "expected_topics": ["term", "whole", "cash value", "premium", "period"],
+        "expected_sources": ["06_insurance_essentials.md"],
+        "category": "insurance"
+    },
+    {
+        "id": "insurance_03",
+        "query": "Do I need renters insurance?",
+        "expected_topics": ["renter", "belongings", "liability", "inexpensive"],
+        "expected_sources": ["06_insurance_essentials.md"],
+        "category": "insurance"
+    },
+    {
+        "id": "insurance_04",
+        "query": "What is disability insurance?",
+        "expected_topics": ["disability", "income", "unable to work", "long-term"],
+        "expected_sources": ["06_insurance_essentials.md"],
+        "category": "insurance"
+    },
+    {
+        "id": "insurance_05",
+        "query": "What insurance do I not need?",
+        "expected_topics": ["extended warranty", "credit card protection", "accidental death", "not need"],
+        "expected_sources": ["06_insurance_essentials.md"],
+        "category": "insurance"
+    },
+    {
+        "id": "insurance_06",
+        "query": "What is an umbrella insurance policy?",
+        "expected_topics": ["umbrella", "liability", "additional", "coverage"],
+        "expected_sources": ["06_insurance_essentials.md"],
+        "category": "insurance"
+    },
+    {
+        "id": "plan_01",
+        "query": "How much money do I need to retire?",
+        "expected_topics": ["retirement", "4 %", "25 times", "annual spending"],
+        "expected_sources": ["07_financial_planning.md"],
+        "category": "planning"
+    },
+    {
+        "id": "plan_02",
+        "query": "What is net worth and how do I calculate it?",
+        "expected_topics": ["net worth", "assets", "liabilities", "minus"],
+        "expected_sources": ["07_financial_planning.md"],
+        "category": "planning"
+    },
+    {
+        "id": "plan_03",
+        "query": "What financial goals should I set?",
+        "expected_topics": ["SMART", "specific", "measurable", "time-bound"],
+        "expected_sources": ["07_financial_planning.md"],
+        "category": "planning"
+    },
+    {
+        "id": "plan_04",
+        "query": "Why is starting to invest early so important?",
+        "expected_topics": ["compound", "early", "time", "decade"],
+        "expected_sources": ["07_financial_planning.md"],
+        "category": "planning"
+    },
+    {
+        "id": "plan_05",
+        "query": "What is estate planning and do I need a will?",
+        "expected_topics": ["will", "estate", "beneficiary", "power of attorney"],
+        "expected_sources": ["07_financial_planning.md"],
+        "category": "planning"
+    },
+    {
+        "id": "plan_06",
+        "query": "What should I include in an annual financial review?",
+        "expected_topics": ["review", "net worth", "budget", "insurance", "annual"],
+        "expected_sources": ["07_financial_planning.md"],
+        "category": "planning"
+    },
+    {
+        "id": "mistake_01",
+        "query": "What is lifestyle inflation?",
+        "expected_topics": ["lifestyle inflation", "income increases", "spending", "raise"],
+        "expected_sources": ["08_common_money_mistakes.md"],
+        "category": "mistakes"
+    },
+    {
+        "id": "mistake_02",
+        "query": "Why should I not try to time the stock market?",
+        "expected_topics": ["time the market", "missing", "best days", "underperform"],
+        "expected_sources": ["08_common_money_mistakes.md"],
+        "category": "mistakes"
+    },
+    {
+        "id": "mistake_03",
+        "query": "Should I co-sign a loan for someone?",
+        "expected_topics": ["co-sign", "responsible", "default", "credit"],
+        "expected_sources": ["08_common_money_mistakes.md"],
+        "category": "mistakes"
+    },
+    {
+        "id": "mistake_04",
+        "query": "Why is it bad to make emotional financial decisions?",
+        "expected_topics": ["emotion", "fear", "greed", "panic", "automate"],
+        "expected_sources": ["08_common_money_mistakes.md"],
+        "category": "mistakes"
+    },
+    {
+        "id": "mistake_05",
+        "query": "Why should I not ignore my employer retirement match?",
+        "expected_topics": ["employer match", "free money", "return", "contribute"],
+        "expected_sources": ["08_common_money_mistakes.md"],
+        "category": "mistakes"
+    },
+    {
+        "id": "mistake_06",
+        "query": "What are get rich quick schemes?",
+        "expected_topics": ["get-rich-quick", "scam", "too good to be true", "boring"],
+        "expected_sources": ["08_common_money_mistakes.md"],
+        "category": "mistakes"
+    },
+    {
+        "id": "cross_01",
+        "query": "I have credit card debt, should I invest or pay it off first?",
+        "expected_topics": ["high-interest", "debt", "invest", "guaranteed return"],
+        "expected_sources": ["03_debt_management.md", "04_investing_fundamentals.md"],
+        "category": "cross-topic"
+    },
+    {
+        "id": "cross_02",
+        "query": "How do I build an emergency fund while paying off debt?",
+        "expected_topics": ["emergency", "debt", "starter", "balance"],
+        "expected_sources": ["02_saving_strategies.md", "03_debt_management.md"],
+        "category": "cross-topic"
+    },
+    {
+        "id": "cross_03",
+        "query": "What is the best order to save, invest, and pay off debt?",
+        "expected_topics": ["emergency", "match", "debt", "invest", "priority", "order"],
+        "expected_sources": ["02_saving_strategies.md", "04_investing_fundamentals.md"],
+        "category": "cross-topic"
+    },
+    {
+        "id": "cross_04",
+        "query": "How do taxes affect my investment returns?",
+        "expected_topics": ["capital gains", "tax-advantaged", "long-term", "returns"],
+        "expected_sources": ["04_investing_fundamentals.md", "05_tax_basics.md"],
+        "category": "cross-topic"
+    },
+    {
+        "id": "cross_05",
+        "query": "How do I plan for retirement with a tight budget?",
+        "expected_topics": ["retirement", "budget", "save", "small amounts", "start"],
+        "expected_sources": ["01_budgeting_basics.md", "07_financial_planning.md"],
+        "category": "cross-topic"
+    },
+    {
+        "id": "cross_06",
+        "query": "What insurance should I prioritize when money is tight?",
+        "expected_topics": ["health", "catastroph", "deductible", "essential"],
+        "expected_sources": ["06_insurance_essentials.md", "08_common_money_mistakes.md"],
+        "category": "cross-topic"
+    }
+]
