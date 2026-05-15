@@ -226,7 +226,7 @@ def show_auth_page() -> None:
         with tab1:
             email    = st.text_input("Email",    key="login_email",    placeholder="you@example.com")
             password = st.text_input("Password", key="login_pass",     placeholder="••••••••", type="password")
-            if st.button("Sign in", use_container_width=True, type="primary", key="login_btn"):
+            if st.button("Sign in", width="stretch", type="primary", key="login_btn"):
                 if email and password:
                     with st.spinner("Signing in…"):
                         session, err = login(email, password)
@@ -243,7 +243,7 @@ def show_auth_page() -> None:
             new_pass   = st.text_input("Password (6+ chars)", key="signup_pass",
                                        placeholder="••••••••", type="password")
             new_pass2  = st.text_input("Confirm password", key="signup_pass2",  placeholder="••••••••", type="password")
-            if st.button("Create account", use_container_width=True, type="primary", key="signup_btn"):
+            if st.button("Create account", width="stretch", type="primary", key="signup_btn"):
                 if not new_email or not new_pass:
                     st.warning("Please fill in all fields.")
                 elif new_pass != new_pass2:
@@ -319,7 +319,6 @@ def init_stt():   return SpeechToText()
 @st.cache_resource
 def init_tts():   return TextToSpeech(default_lang="en", gender="male")
 
-@st.cache_resource
 def init_brain(): return FinanceBrain()
 
 @st.cache_resource
@@ -502,14 +501,14 @@ with st.sidebar:
         ))
         fig_trend.update_layout(**trend_layout(height=150))
         st.markdown('<div class="fb-trend-label">7-day trend</div>', unsafe_allow_html=True)
-        st.plotly_chart(fig_trend, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_trend, width="stretch", config={"displayModeBar": False})
 
     # Historical dashboard (collapsible)
     from dashboard.ui import render_historical_dashboard
     render_historical_dashboard(tracker, analyzer)
 
     st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("Sign out", use_container_width=True):
+    if st.button("Sign out", width="stretch"):
         logout()
         st.rerun()
 

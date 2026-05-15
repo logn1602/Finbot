@@ -82,7 +82,7 @@ def _render_overview(tracker, months_back: int) -> None:
     summary = tracker.get_monthly_summary(months_back)
     fig_bar = monthly_spending_bar(summary)
     if fig_bar:
-        st.plotly_chart(fig_bar, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_bar, width="stretch", config={"displayModeBar": False})
 
         # Summary stats row
         if len(summary) >= 2:
@@ -107,7 +107,7 @@ def _render_overview(tracker, months_back: int) -> None:
     daily = tracker.get_spending_trend(days=min(months_back * 30, 90))
     fig_trend = spending_trend_line(daily)
     if fig_trend:
-        st.plotly_chart(fig_trend, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_trend, width="stretch", config={"displayModeBar": False})
     else:
         _no_data_msg()
 
@@ -120,7 +120,7 @@ def _render_categories(tracker, analyzer, months_back: int) -> None:
     breakdown = tracker.get_monthly_breakdown_by_category(months_back)
     fig_stacked = category_breakdown_stacked(breakdown)
     if fig_stacked:
-        st.plotly_chart(fig_stacked, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_stacked, width="stretch", config={"displayModeBar": False})
     else:
         _no_data_msg()
         return
@@ -142,7 +142,7 @@ def _render_categories(tracker, analyzer, months_back: int) -> None:
             limit = budgets.get(selected)
             fig_cat = category_trend_line(selected, trend, budget_limit=limit)
             if fig_cat:
-                st.plotly_chart(fig_cat, use_container_width=True, config={"displayModeBar": False})
+                st.plotly_chart(fig_cat, width="stretch", config={"displayModeBar": False})
 
 
 def _render_budget(analyzer, months_back: int) -> None:
@@ -152,7 +152,7 @@ def _render_budget(analyzer, months_back: int) -> None:
     perf = analyzer.get_historical_budget_performance(months_back)
     fig_heat = budget_performance_heatmap(perf)
     if fig_heat:
-        st.plotly_chart(fig_heat, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_heat, width="stretch", config={"displayModeBar": False})
 
         # Count overspend months
         over_count = sum(1 for p in perf if p["status"] == "over")
