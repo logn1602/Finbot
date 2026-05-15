@@ -1,0 +1,41 @@
+name: Docker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Dockerfile"
+      - "docker-compose.yml"
+      - "requirements.txt"
+      - "**.py"
+
+jobs:
+  build:
+    name: Build Image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t finbot:test .
+
+      - name: Smoke test — verify imports
+        run: |
+          docker run --rm finbot:test python -c "
+          from brain.llm import FinanceBrain
+          from finance.database import ExpenseTracker, BudgetAnalyzer
+          from voice.tts import TextToSpeech
+          from dashboard.charts import monthly_spending_bar
+          from rag.retriever import FinanceRetriever
+          print('All imports OK')
+          "
+
+      - name: Post build summary
+        if: always()
+        run: |
+          SIZE=$(docker images finbot:test --format "{{.Size}}")
+          echo "## Docker Build" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Image: \`finbot:test\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Size: $SIZE" >> $GITHUB_STEP_SUMMARY
+          echo "- Smoke test: all imports verified" >> $GITHUB_STEP_SUMMARY

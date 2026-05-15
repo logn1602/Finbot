@@ -1,0 +1,35 @@
+# Virtual environments
+venv/
+.venv/
+
+# Environment secrets
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# ChromaDB (rebuilt on startup)
+chroma_db/
+
+# HuggingFace cache (downloaded in build)
+.cache/
+
+# Audio temp files
+response.mp3
+
+# Git
+.git/
+.github/
+
+# SQLite (legacy)
+finbot.db
