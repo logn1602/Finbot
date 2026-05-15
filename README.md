@@ -2,6 +2,8 @@
 
 > Say *"I spent ₹450 on food"* → FinBot logs it, checks your budget, and talks back. In your language.
 
+[![CI](https://github.com/logn1602/Finbot/actions/workflows/ci.yml/badge.svg)](https://github.com/logn1602/Finbot/actions/workflows/ci.yml)
+[![Docker](https://github.com/logn1602/Finbot/actions/workflows/docker.yml/badge.svg)](https://github.com/logn1602/Finbot/actions/workflows/docker.yml)
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=flat&logo=python&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B?style=flat&logo=streamlit&logoColor=white)
 ![Groq](https://img.shields.io/badge/LLM-Llama_3.3_70B_via_Groq-F55036?style=flat)
