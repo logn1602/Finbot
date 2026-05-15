@@ -565,6 +565,8 @@ CHIPS = [
     ("📊", "How much did I spend today?"),
     ("🎯", "Am I within my budget?"),
     ("💡", "Give me a savings tip"),
+    ("📈", "How has my spending changed?"),
+    ("📅", "Compare last 3 months"),
 ]
 
 st.markdown('<div class="fb-chips-row">', unsafe_allow_html=True)
