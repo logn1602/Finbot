@@ -304,7 +304,7 @@ if "user_timezone" not in st.session_state:
 
 # ── Module imports (post-auth) ─────────────────────────────────
 from brain.llm import FinanceBrain
-from finance.database import BudgetAnalyzer, ChatHistory, ExpenseTracker
+from finance.database import BudgetAnalyzer, ChatHistory, ExpenseTracker, now_local
 from styles.plotly_theme import trend_layout
 from voice.stt import SpeechToText
 from voice.tts import TextToSpeech
@@ -435,7 +435,7 @@ def _dispatch(user_text: str, language: str = None, stt_ms: float = 0.0) -> None
 # All stats are computed here so they remain visible in the fixed
 # sidebar while the main chat area scrolls independently.
 with st.sidebar:
-    total_month    = tracker.get_total_spent(days=30)
+    total_month    = tracker.get_total_spent_this_month()
     today_expenses = tracker.get_today_expenses()
     total_today    = sum(e["amount"] for e in today_expenses)
     today_count    = len(today_expenses)
@@ -463,7 +463,7 @@ with st.sidebar:
         <div class="fb-scard fb-scard-main">
             <div class="fb-scard-label">This month</div>
             <div class="fb-scard-value">${total_month:,.0f}</div>
-            <div class="fb-scard-sub">30-day total</div>
+            <div class="fb-scard-sub">{now_local().strftime('%B')} total</div>
         </div>
         <div class="fb-scard">
             <div class="fb-scard-label">Today</div>
