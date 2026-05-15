@@ -359,8 +359,12 @@ st.session_state.messages = _strip_stale_breakdowns(st.session_state.messages)
 
 def process_user_input(user_text: str, language: str = None, stt_ms: float = 0.0) -> dict:
     t0 = time.perf_counter()
-    financial_context = analyzer.generate_context_for_llm()
-    result            = brain.process_message(user_text, financial_context, language=language)
+    financial_context   = analyzer.generate_context_for_llm()
+    historical_context  = analyzer.generate_historical_context_for_llm()
+    result              = brain.process_message(
+        user_text, financial_context, language=language,
+        historical_context=historical_context,
+    )
     llm_ms            = (time.perf_counter() - t0) * 1000
 
     intent_type   = result["intent"].get("intent", "get_advice")

@@ -46,6 +46,21 @@ INTENTS:
 
 CATEGORIES: food, transport, entertainment, shopping, bills, health, education, other
 
+TIME SCOPE:
+Determine whether the user is asking about the current month or historical data.
+- "current_month": anything about this month, today, recent, or no time reference (DEFAULT)
+- "historical": anything about past months, last month, previous months, trends over time, comparisons
+Examples:
+  "how much did I spend this month" -> current_month
+  "what was my spending last month" -> historical
+  "show me my spending trends" -> historical
+  "compare my spending over the last 3 months" -> historical
+  "I spent 500 on food" -> current_month
+  "am I overspending" -> current_month
+  "how did my food spending change over time" -> historical
+  "what did I spend in January" -> historical
+For add_expense and set_budget intents, ALWAYS use "current_month".
+
 LANGUAGE DETECTION:
 - Detect the language the user is writing in
 - Use ISO 639-1 codes: en, hi, ta, te, bn, mr, gu, kn, ml, pa, ur, es, fr, de, zh, ja, ko, ar, pt, ru, it
@@ -61,7 +76,8 @@ Respond ONLY with valid JSON, no markdown, no backticks:
         "period": null or "today/week/month"
     },
     "confidence": 0.0 to 1.0,
-    "language": "detected language code (e.g., en, hi, ta, es)"
+    "language": "detected language code (e.g., en, hi, ta, es)",
+    "time_scope": "current_month or historical"
 }""")
 
 
@@ -183,7 +199,7 @@ class FinanceBrain:
 
         except (json.JSONDecodeError, Exception) as e:
             print(f"Intent classification error: {e}")
-            return {"intent": "get_advice", "entities": {}, "confidence": 0.3, "language": "en"}
+            return {"intent": "get_advice", "entities": {}, "confidence": 0.3, "language": "en", "time_scope": "current_month"}
 
     def generate_response(self, user_message: str, financial_context: str = "",
                           language: str = "en", rag_context: str = "") -> str:
@@ -213,7 +229,8 @@ class FinanceBrain:
             print(f"LLM generation error: {e}")
             return _FALLBACK_ERRORS.get(language, _FALLBACK_ERRORS["en"])
 
-    def process_message(self, user_message: str, financial_context: str = "", language: str = None) -> dict:
+    def process_message(self, user_message: str, financial_context: str = "",
+                        language: str = None, historical_context: str = "") -> dict:
         """
         Full pipeline: classify intent (+ detect language) → generate response.
 
@@ -221,14 +238,30 @@ class FinanceBrain:
         intents to avoid unnecessary latency on simple actions like logging
         an expense or greeting.
 
+        Time scope routing: the intent classifier outputs a time_scope field.
+        - current_month → uses financial_context (current calendar month data)
+        - historical → uses historical_context (multi-month trends & comparisons)
+        For add_expense and set_budget, always uses current-month context.
+
         language: if provided by Whisper, it takes precedence over LLM detection.
         """
         intent_data = self.classify_intent(user_message)
         intent_name = intent_data.get("intent", "get_advice")
+        time_scope = intent_data.get("time_scope", "current_month")
         print(f"  Intent: {intent_name} (confidence: {intent_data.get('confidence', 'N/A')})")
+        print(f"  Time scope: {time_scope}")
 
         detected_language = language or intent_data.get("language", "en")
         print(f"  Language: {detected_language}")
+
+        # Route to the correct financial context based on time_scope
+        # add_expense and set_budget always use current-month context
+        if intent_name in ("add_expense", "set_budget"):
+            active_context = financial_context
+        elif time_scope == "historical" and historical_context:
+            active_context = historical_context
+        else:
+            active_context = financial_context
 
         # Intent-gated RAG: only fetch knowledge for advice/query intents
         rag_context = ""
@@ -238,7 +271,7 @@ class FinanceBrain:
                 print(f"  RAG: injected knowledge context ({len(rag_context)} chars)")
 
         response = self.generate_response(
-            user_message, financial_context, detected_language, rag_context
+            user_message, active_context, detected_language, rag_context
         )
 
         return {
