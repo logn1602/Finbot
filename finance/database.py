@@ -196,10 +196,12 @@ class BudgetAnalyzer:
     def get_budget_status(self):
         now = now_local()
         days_passed = now.day
-        start_of_month = now.replace(day=1).strftime("%Y-%m-%d")
+        # Actual days in the current month (not hardcoded 30)
+        next_m = now.replace(day=28) + timedelta(days=4)
+        days_in_month = (next_m - timedelta(days=next_m.day)).day
 
-        # Use get_expenses with start_of_month for accurate monthly data
-        rows = self.tracker.get_expenses(start_date=start_of_month)
+        # Strict calendar month boundaries
+        rows = self.tracker.get_current_month_expenses()
         spending_map = {}
         for r in rows:
             cat = r["category"]
@@ -210,7 +212,7 @@ class BudgetAnalyzer:
         for cat, limit in budgets.items():
             spent = spending_map.get(cat, 0)
             pct = (spent / limit * 100) if limit > 0 else 0
-            projected = (spent / days_passed * 30) if days_passed > 0 else 0
+            projected = (spent / days_passed * days_in_month) if days_passed > 0 else 0
             status.append({
                 "category": cat,
                 "budget": limit,
@@ -263,7 +265,7 @@ class BudgetAnalyzer:
     def generate_context_for_llm(self):
         status      = self.get_budget_status()
         insights    = self.get_spending_insights()
-        total_month = self.tracker.get_total_spent(days=30)
+        total_month = self.tracker.get_total_spent_this_month()
         total_today = sum(e["amount"] for e in self.tracker.get_today_expenses())
 
         # Pre-compute derived numbers so the LLM never has to do arithmetic
