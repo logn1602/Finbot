@@ -23,6 +23,18 @@ def today_local():
     """Returns today's date string in user's browser timezone."""
     return now_local().strftime("%Y-%m-%d")
 
+def month_start_local():
+    """Returns the first day of the current month as a date string (YYYY-MM-DD)."""
+    return now_local().replace(day=1).strftime("%Y-%m-%d")
+
+def next_month_start_local():
+    """Returns the first day of the NEXT month as a date string (YYYY-MM-DD).
+    Used as an exclusive upper bound: date < next_month_start."""
+    now = now_local()
+    if now.month == 12:
+        return datetime(now.year + 1, 1, 1).strftime("%Y-%m-%d")
+    return datetime(now.year, now.month + 1, 1).strftime("%Y-%m-%d")
+
 
 # ============================================================
 # EXPENSE TRACKER
@@ -71,7 +83,21 @@ class ExpenseTracker:
             q = q.lte("date", end_date)
         return q.order("date", desc=True).execute().data
 
+    def get_current_month_expenses(self):
+        """Get all expenses for the current calendar month only.
+        Uses strict boundaries: >= first day of month AND < first day of next month."""
+        db = get_db()
+        rows = (db.table("expenses")
+                  .select("*")
+                  .eq("user_id", get_uid())
+                  .gte("date", month_start_local())
+                  .lt("date", next_month_start_local())
+                  .order("date", desc=True)
+                  .execute().data)
+        return rows
+
     def get_expenses_by_period(self, days=30):
+        """Rolling N-day window. Use ONLY for trend charts, NOT for budget/month metrics."""
         start_date = (now_local() - timedelta(days=days)).strftime("%Y-%m-%d")
         db = get_db()
         rows = (db.table("expenses")
@@ -82,8 +108,9 @@ class ExpenseTracker:
                   .execute().data)
         return rows
 
-    def get_category_totals(self, days=30):
-        rows = self.get_expenses_by_period(days=days)
+    def get_category_totals(self):
+        """Category spending totals for the current calendar month only."""
+        rows = self.get_current_month_expenses()
         totals = {}
         for r in rows:
             cat = r["category"]
@@ -94,6 +121,7 @@ class ExpenseTracker:
         return totals
 
     def get_daily_totals(self, days=7):
+        """Rolling N-day daily totals. Used for sparkline trend charts."""
         start_date = (now_local() - timedelta(days=days)).strftime("%Y-%m-%d")
         db = get_db()
         rows = (db.table("expenses")
@@ -107,9 +135,19 @@ class ExpenseTracker:
             daily[d] = daily.get(d, 0) + r["amount"]
         return [{"date": d, "total": t} for d, t in sorted(daily.items())]
 
-    def get_total_spent(self, days=30):
-        rows = self.get_expenses_by_period(days=days)
+    def get_total_spent_this_month(self):
+        """Total spending for the current calendar month only."""
+        rows = self.get_current_month_expenses()
         return sum(r["amount"] for r in rows)
+
+    def get_total_spent(self, days=None):
+        """Backward-compatible wrapper.
+        With no args (or days=None): returns current calendar month total.
+        With days=N: returns rolling N-day total (for trend use only)."""
+        if days is not None:
+            rows = self.get_expenses_by_period(days=days)
+            return sum(r["amount"] for r in rows)
+        return self.get_total_spent_this_month()
 
     def undo_last_expense(self) -> dict | None:
         """
@@ -187,7 +225,7 @@ class BudgetAnalyzer:
     def get_spending_insights(self):
         insights = []
         status = self.get_budget_status()
-        totals = self.tracker.get_category_totals(days=30)
+        totals = self.tracker.get_category_totals()
         daily = self.tracker.get_daily_totals(days=7)
 
         for s in status:
