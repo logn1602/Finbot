@@ -21,7 +21,7 @@ jobs:
 
       - name: Smoke test — verify imports
         run: |
-          docker run --rm finbot:test python -c "
+          docker run --rm --entrypoint python finbot:test -c "
           from brain.llm import FinanceBrain
           from finance.database import ExpenseTracker, BudgetAnalyzer
           from voice.tts import TextToSpeech
