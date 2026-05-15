@@ -376,7 +376,7 @@ def process_user_input(user_text: str, language: str = None, stt_ms: float = 0.0
         desc     = entities.get("description", "")
         if amount and float(amount) > 0:
             # Log immediately (optimistic)
-            exp = tracker.add_expense(float(amount), category, desc)
+            tracker.add_expense(float(amount), category, desc)
             # Store for undo
             st.session_state.undo_expense = {
                 "label":    f"${float(amount):,.0f} · {category}",

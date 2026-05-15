@@ -30,7 +30,7 @@ def login(email: str, password: str):
         if res.session:
             return res.session, None
         return None, "Invalid email or password."
-    except Exception as e:
+    except Exception:
         return None, "Invalid email or password."
 
 def logout():

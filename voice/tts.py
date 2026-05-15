@@ -101,7 +101,7 @@ class TextToSpeech:
     def speak(self, text, language=None):
         """
         Convert text to speech and play it.
-        
+
         Args:
             text: what to say
             language: language code (e.g., 'hi', 'en', 'ta')

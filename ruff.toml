@@ -1,0 +1,24 @@
+# Ruff linter configuration for FinBot
+target-version = "py311"
+line-length = 120
+
+[lint]
+# Focus on real bugs, not style nitpicks
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes (unused imports, undefined names)
+    "W",   # pycodestyle warnings
+]
+ignore = [
+    "E501", # line too long — handled by line-length setting above
+    "E402", # module-level import not at top — Streamlit requires st.set_page_config first
+    "F401", # unused import — some __init__.py re-exports
+    "E731", # lambda assignment — used in format_func callbacks
+    "W605", # invalid escape sequence — common in regex strings
+    "E701", # multiple statements on one line — used for compact session state init
+    "E722", # bare except — acceptable in cleanup-only code
+    "E401", # multiple imports on one line — used in tests for brevity
+]
+
+[lint.per-file-ignores]
+"tests/*" = ["F811"]  # redefined-unused — pytest fixtures
