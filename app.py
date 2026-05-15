@@ -504,6 +504,10 @@ with st.sidebar:
         st.markdown('<div class="fb-trend-label">7-day trend</div>', unsafe_allow_html=True)
         st.plotly_chart(fig_trend, use_container_width=True, config={"displayModeBar": False})
 
+    # Historical dashboard (collapsible)
+    from dashboard.ui import render_historical_dashboard
+    render_historical_dashboard(tracker, analyzer)
+
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("Sign out", use_container_width=True):
         logout()
