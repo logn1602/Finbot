@@ -149,6 +149,121 @@ class ExpenseTracker:
             return sum(r["amount"] for r in rows)
         return self.get_total_spent_this_month()
 
+    # ── Historical query methods ──────────────────────────────
+
+    def _month_boundaries(self, months_back: int) -> tuple[str, str]:
+        """Return (start_date, end_date) covering the last N months + current month.
+        start_date: first day of the month N months ago.
+        end_date: first day of next month (exclusive upper bound)."""
+        now = now_local()
+        # Walk back months_back months
+        y, m = now.year, now.month
+        for _ in range(months_back):
+            m -= 1
+            if m == 0:
+                m = 12
+                y -= 1
+        start = datetime(y, m, 1).strftime("%Y-%m-%d")
+        end = next_month_start_local()
+        return start, end
+
+    def get_monthly_summary(self, months_back: int = 6) -> list[dict]:
+        """Monthly totals for the last N months + current month.
+        Returns [{"month": "2026-04", "total": 873.00, "expense_count": 45}, ...]
+        sorted chronologically."""
+        start, end = self._month_boundaries(months_back)
+        db = get_db()
+        rows = (db.table("expenses")
+                  .select("date, amount")
+                  .eq("user_id", get_uid())
+                  .gte("date", start)
+                  .lt("date", end)
+                  .execute().data)
+        monthly: dict[str, dict] = {}
+        for r in rows:
+            key = str(r["date"])[:7]  # "YYYY-MM"
+            if key not in monthly:
+                monthly[key] = {"total": 0, "expense_count": 0}
+            monthly[key]["total"] += r["amount"]
+            monthly[key]["expense_count"] += 1
+        return [
+            {"month": m, "total": round(d["total"], 2), "expense_count": d["expense_count"]}
+            for m, d in sorted(monthly.items())
+        ]
+
+    def get_monthly_breakdown_by_category(self, months_back: int = 6) -> list[dict]:
+        """Monthly totals grouped by month AND category.
+        Returns [{"month": "2026-04", "category": "food", "total": 230.00}, ...]."""
+        start, end = self._month_boundaries(months_back)
+        db = get_db()
+        rows = (db.table("expenses")
+                  .select("date, category, amount")
+                  .eq("user_id", get_uid())
+                  .gte("date", start)
+                  .lt("date", end)
+                  .execute().data)
+        buckets: dict[tuple[str, str], float] = {}
+        for r in rows:
+            key = (str(r["date"])[:7], r["category"])
+            buckets[key] = buckets.get(key, 0) + r["amount"]
+        return [
+            {"month": m, "category": c, "total": round(t, 2)}
+            for (m, c), t in sorted(buckets.items())
+        ]
+
+    def get_month_expenses(self, year: int, month: int) -> list[dict]:
+        """All expenses for a specific calendar month."""
+        start = datetime(year, month, 1).strftime("%Y-%m-%d")
+        if month == 12:
+            end = datetime(year + 1, 1, 1).strftime("%Y-%m-%d")
+        else:
+            end = datetime(year, month + 1, 1).strftime("%Y-%m-%d")
+        db = get_db()
+        return (db.table("expenses")
+                  .select("*")
+                  .eq("user_id", get_uid())
+                  .gte("date", start)
+                  .lt("date", end)
+                  .order("date", desc=True)
+                  .execute().data)
+
+    def get_spending_trend(self, days: int = 90) -> list[dict]:
+        """Daily totals for the last N days.
+        Returns [{"date": "2026-05-01", "total": 45.00}, ...] sorted by date."""
+        start_date = (now_local() - timedelta(days=days)).strftime("%Y-%m-%d")
+        db = get_db()
+        rows = (db.table("expenses")
+                  .select("date, amount")
+                  .eq("user_id", get_uid())
+                  .gte("date", start_date)
+                  .execute().data)
+        daily: dict[str, float] = {}
+        for r in rows:
+            d = str(r["date"])
+            daily[d] = daily.get(d, 0) + r["amount"]
+        return [{"date": d, "total": round(t, 2)} for d, t in sorted(daily.items())]
+
+    def get_category_trend(self, category: str, months_back: int = 6) -> list[dict]:
+        """Monthly totals for a specific category over time.
+        Returns [{"month": "2026-04", "total": 150.00}, ...]."""
+        start, end = self._month_boundaries(months_back)
+        db = get_db()
+        rows = (db.table("expenses")
+                  .select("date, amount")
+                  .eq("user_id", get_uid())
+                  .eq("category", category.lower())
+                  .gte("date", start)
+                  .lt("date", end)
+                  .execute().data)
+        monthly: dict[str, float] = {}
+        for r in rows:
+            key = str(r["date"])[:7]
+            monthly[key] = monthly.get(key, 0) + r["amount"]
+        return [
+            {"month": m, "total": round(t, 2)}
+            for m, t in sorted(monthly.items())
+        ]
+
     def undo_last_expense(self) -> dict | None:
         """
         Delete the most recently inserted expense for the current user.
@@ -313,6 +428,118 @@ class BudgetAnalyzer:
         context += (
             "\nRULE: Every number above is exact. "
             "Quote them verbatim; never perform your own arithmetic on user data."
+        )
+
+        return context
+
+    # ── Historical methods ─────────────────────────────────────
+
+    def get_historical_budget_performance(self, months_back: int = 6) -> list[dict]:
+        """For each past month, returns budget limit vs actual spent per category.
+        Returns [{"month": "2026-04", "category": "food", "budget": 500,
+                  "spent": 430, "status": "ok"}, ...]."""
+        budgets = self.get_budgets()
+        if not budgets:
+            return []
+        breakdown = self.tracker.get_monthly_breakdown_by_category(months_back)
+        # Build lookup: (month, category) -> total
+        spent_map: dict[tuple[str, str], float] = {}
+        months_seen: set[str] = set()
+        for row in breakdown:
+            spent_map[(row["month"], row["category"])] = row["total"]
+            months_seen.add(row["month"])
+
+        results = []
+        for month in sorted(months_seen):
+            for cat, limit in budgets.items():
+                spent = spent_map.get((month, cat), 0)
+                pct = (spent / limit * 100) if limit > 0 else 0
+                status = "over" if pct > 100 else "warning" if pct > 75 else "ok"
+                results.append({
+                    "month": month,
+                    "category": cat,
+                    "budget": limit,
+                    "spent": round(spent, 2),
+                    "percentage": round(pct, 1),
+                    "status": status,
+                })
+        return results
+
+    def generate_historical_context_for_llm(self, months_back: int = 3) -> str:
+        """Multi-month financial context for historical queries.
+        Separate from generate_context_for_llm() — only called when
+        the user asks a historical/trend question."""
+        summary = self.tracker.get_monthly_summary(months_back)
+        perf = self.get_historical_budget_performance(months_back)
+        budgets = self.get_budgets()
+
+        if not summary:
+            return (
+                "HISTORICAL DATA: No spending history found yet. "
+                "The user is new or has not logged expenses in previous months."
+            )
+
+        now = now_local()
+        context = (
+            "USER'S HISTORICAL FINANCIAL DATA "
+            "(all figures pre-calculated — use them exactly, do not recompute):\n\n"
+            "MONTHLY SPENDING SUMMARY:\n"
+        )
+        for s in summary:
+            label = "(current)" if s["month"] == now.strftime("%Y-%m") else ""
+            context += (
+                f"- {s['month']} {label}: ${s['total']:,.2f} "
+                f"({s['expense_count']} expenses)\n"
+            )
+
+        # Month-over-month change
+        if len(summary) >= 2:
+            prev, curr = summary[-2], summary[-1]
+            change = curr["total"] - prev["total"]
+            pct_change = (change / prev["total"] * 100) if prev["total"] > 0 else 0
+            direction = "up" if change > 0 else "down"
+            context += (
+                f"\nMONTH-OVER-MONTH: ${abs(change):,.2f} {direction} "
+                f"({abs(pct_change):.1f}%) from {prev['month']} to {curr['month']}\n"
+            )
+
+        # Per-category budget performance across months
+        if perf and budgets:
+            context += "\nBUDGET PERFORMANCE BY CATEGORY (per month):\n"
+            # Group by category
+            cat_months: dict[str, list] = {}
+            for p in perf:
+                cat_months.setdefault(p["category"], []).append(p)
+
+            for cat, months_data in sorted(cat_months.items()):
+                limit = budgets.get(cat, 0)
+                if limit <= 0:
+                    continue
+                over_count = sum(1 for m in months_data if m["status"] == "over")
+                context += f"- {cat} (budget ${limit:,.0f}/mo): "
+                month_strs = [
+                    f"{m['month']}=${m['spent']:,.0f}({m['status'].upper()})"
+                    for m in months_data
+                ]
+                context += ", ".join(month_strs)
+                if over_count >= 2:
+                    context += f" [OVER BUDGET {over_count}/{len(months_data)} months]"
+                context += "\n"
+
+        # Identify trends
+        if len(summary) >= 3:
+            totals = [s["total"] for s in summary]
+            increasing = all(totals[i] < totals[i+1] for i in range(len(totals)-1))
+            decreasing = all(totals[i] > totals[i+1] for i in range(len(totals)-1))
+            if increasing:
+                context += "\nTREND: Spending has increased every month — flag this to the user.\n"
+            elif decreasing:
+                context += "\nTREND: Spending has decreased every month — praise the user.\n"
+
+        context += (
+            "\nRULE: Every number above is exact. "
+            "Quote them verbatim; never perform your own arithmetic on user data. "
+            "When discussing trends, reference specific months and amounts."
         )
 
         return context
