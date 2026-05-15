@@ -196,6 +196,93 @@ Language detection flows from Whisper (most reliable source, since it's trained 
 
 ---
 
+## Calendar Month Scoping
+
+### The problem
+
+The original codebase used rolling 30-day windows for all "this month" queries (`get_total_spent(days=30)`). This caused April expenses to bleed into May totals and vice versa, producing incorrect budget tracking near month boundaries.
+
+### The fix
+
+All current-month queries now use strict calendar month boundaries:
+
+```python
+month_start_local()       # e.g., "2026-05-01"
+next_month_start_local()  # e.g., "2026-06-01"
+# Query: date >= month_start AND date < next_month_start
+```
+
+This ensures that expenses logged on April 30th never appear in May's totals, regardless of timezone. The boundary functions use the user's browser timezone (detected via `streamlit-js-eval`) so "today" and "this month" match the user's local calendar.
+
+Budget projections now use `calendar.monthrange()` to get the actual number of days in the current month (28, 29, 30, or 31) instead of assuming 30.
+
+### Backward compatibility
+
+`get_total_spent(days=None)` still accepts an optional `days` parameter for rolling-window queries. When called without arguments, it returns the calendar-month total. Existing callers that passed `days=30` were updated to use the new `get_total_spent_this_month()` method.
+
+---
+
+## Time Scope Detection
+
+### Why two scopes?
+
+A user asking "how much did I spend this month?" needs current-month data. A user asking "how has my spending changed over the last 3 months?" needs historical multi-month data. Feeding current-month-only context to historical questions produces unhelpful responses; feeding multi-month data to simple expense logging wastes tokens and confuses the LLM.
+
+### How it works
+
+The intent classifier outputs a `time_scope` field alongside the intent:
+
+- `current_month` (default) — "how much did I spend?", "I spent 500 on food", "set my budget to 600"
+- `historical` — "compare last 3 months", "how has my spending changed?", "what did I spend in January?"
+
+`process_message()` reads the scope and routes to the correct context generator:
+
+| Scope | Context source | Content |
+|---|---|---|
+| `current_month` | `generate_context_for_llm()` | This month's totals, budget status, today's spending |
+| `historical` | `generate_historical_context_for_llm()` | Multi-month summaries, month-over-month changes, category trends |
+
+`add_expense` and `set_budget` intents always use `current_month` regardless of the classifier's output, since they are write operations against the current period.
+
+---
+
+## Historical Dashboard
+
+### Architecture
+
+The historical dashboard is a collapsible panel in the sidebar, built as a separate module (`dashboard/`) to keep `app.py` focused on the chat interface.
+
+```
+dashboard/
+├── charts.py    # 5 Plotly chart functions (pure data → figure)
+└── ui.py        # Streamlit layout (tabs, selectors, rendering)
+```
+
+**Data layer** reuses the historical query methods added to `ExpenseTracker` and `BudgetAnalyzer` — no new database queries were needed for the UI.
+
+### Chart functions
+
+| Function | Chart type | Data source |
+|---|---|---|
+| `monthly_spending_bar()` | Bar | `get_monthly_summary()` |
+| `category_breakdown_stacked()` | Stacked bar | `get_monthly_breakdown_by_category()` |
+| `spending_trend_line()` | Line + 7-day MA | `get_spending_trend()` |
+| `budget_performance_heatmap()` | Heatmap | `get_historical_budget_performance()` |
+| `category_trend_line()` | Line + budget ref | `get_category_trend()` |
+
+All chart functions return `None` on empty data, allowing the UI to skip rendering gracefully. All use the shared dark theme tokens from `styles/tokens.py`.
+
+### UI layout
+
+Three tabs inside an `st.expander`:
+1. **Overview** — monthly bar chart with month-over-month stats, 90-day daily trend with moving average
+2. **Categories** — stacked breakdown + single-category drilldown with budget reference line
+3. **Budget** — heatmap of budget usage percentage (category x month), color-coded green/gold/coral
+
+A period slider (3/6/9/12 months) controls all tabs from a single control.
+
+---
+
 ## What Was Deliberately Not Built
 
 - **Streaming responses** — Streamlit's `st.write_stream()` is available, but streaming conflicts with the TTS step (you can't synthesise audio until the full response is known). A future architecture could stream text first, then generate audio for the complete response.

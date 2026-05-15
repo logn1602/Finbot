@@ -80,10 +80,11 @@ flowchart TD
 |---|---|
 | 🎤 Voice-first UX | Speak naturally — no forms, no dropdowns |
 | 🌍 20+ Languages | Auto-detects Hindi, Tamil, Spanish, French, Japanese, and more — responds in kind |
-| 🧠 Intent Engine | Classifies: `add_expense` · `query_balance` · `get_advice` · `set_budget` · `greeting` |
+| 🧠 Intent Engine | Classifies: `add_expense` · `query_balance` · `get_advice` · `set_budget` · `greeting` with automatic `time_scope` detection (current month vs historical) |
 | 📚 RAG Knowledge | Retrieves curated personal-finance advice (budgeting, saving, debt, investing, tax, insurance) via ChromaDB — intent-gated so only advice/query intents pay the retrieval cost |
 | 📊 Live Dashboard | Spending trends (7-day), category breakdown donut chart, budget progress bars |
-| ⚠️ Budget Alerts | Flags categories as `OVER` / `WARNING` / `ON TRACK` with end-of-month projections |
+| 📈 Historical Dashboard | Multi-month spending trends, category breakdowns, budget performance heatmap — all in a collapsible sidebar panel with 3/6/9/12 month period selector |
+| ⚠️ Budget Alerts | Flags categories as `OVER` / `WARNING` / `ON TRACK` with calendar-month projections |
 | 💬 Conversation Memory | Retains last 20 messages for coherent multi-turn dialogue |
 | 🔒 Multi-user Auth | Supabase authentication with row-level security — every query is scoped to the logged-in user |
 | 💸 Zero Cost | Groq (free) + Supabase (free) + Edge-TTS (free) + Streamlit Cloud (free) |
@@ -121,6 +122,9 @@ Finbot/
 ├── voice/
 │   ├── stt.py                 # Speech-to-text (Groq Whisper + local offline fallback)
 │   └── tts.py                 # Text-to-speech (Edge-TTS, async, 20+ language voices)
+├── dashboard/                 # Historical spending dashboard
+│   ├── charts.py              # 5 Plotly chart functions (bar, stacked, trend, heatmap, drilldown)
+│   └── ui.py                  # Streamlit UI — 3-tab collapsible panel with period selector
 ├── knowledge/                 # Curated personal-finance knowledge base (8 articles)
 │   ├── 01_budgeting_basics.md
 │   ├── 02_saving_strategies.md
@@ -141,7 +145,8 @@ Finbot/
 │   ├── test_llm.py            # Intent classification + language detection tests
 │   ├── test_database.py       # Financial context generation tests
 │   ├── test_tts.py            # Voice selection tests
-│   └── test_rag.py            # Embedding, retriever, chunking, ingestion tests (25 tests)
+│   ├── test_rag.py            # Embedding, retriever, chunking, ingestion tests (25 tests)
+│   └── test_historical.py     # Month scoping, historical queries, time scope, charts (41 tests)
 └── ARCHITECTURE.md            # Design decisions and trade-off rationale
 ```
 
@@ -223,11 +228,20 @@ Language is **auto-detected** from your voice or text — no manual selection ne
 
 ## Dashboard Features
 
+### Current Month (sidebar — always visible)
 - **Monthly / daily spending totals** with real-time updates
 - **Budget progress bars** with ON TRACK / WARNING / OVER badges
 - **Category breakdown** donut chart
 - **7-day spending trend** line chart
 - **Smart insights** — overspending alerts, spending spikes, top category callouts
+
+### Historical Dashboard (sidebar — collapsible)
+- **Monthly spending bar chart** with current month highlighted
+- **Daily spending trend** over 90 days with 7-day moving average
+- **Category breakdown** stacked bar chart across months
+- **Category drilldown** — select any category to see its monthly trend vs budget limit
+- **Budget performance heatmap** — category x month grid color-coded by budget usage %
+- **Period selector** — toggle between 3, 6, 9, or 12 months of history
 
 ---
 
