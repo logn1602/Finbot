@@ -12,6 +12,7 @@ supabase>=2.0.0
 tzlocal>=4.0
 streamlit-js-eval>=0.1.9
 pytest>=7.0.0
+pydantic>=2.0
 
 # RAG pipeline
 sentence-transformers>=2.2.0

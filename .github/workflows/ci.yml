@@ -39,7 +39,7 @@ jobs:
 
       - name: Run unit tests
         run: |
-          python -m pytest tests/test_database.py tests/test_historical.py tests/test_rag.py \
+          python -m pytest tests/test_database.py tests/test_historical.py tests/test_rag.py tests/test_guardrails.py \
             -v --tb=short --junitxml=test-results.xml \
             --deselect tests/test_database.py::TestUndoLastExpense
 
