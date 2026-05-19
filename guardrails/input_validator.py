@@ -106,6 +106,55 @@ _RISK_BLOCK = 4          # score ≥ 4 → block
 _RISK_LOG_WARN = 2       # score ≥ 2 → log warning
 
 
+# ── Abuse / profanity constants ──────────────────────────────────
+
+_ABUSE_RESPONSE = (
+    "I understand that can be frustrating. I'm here to help with your "
+    "finances — would you like to check your budget or log an expense?"
+)
+
+# Severe: slurs and extreme profanity.  Kept as raw stems so common
+# leetspeak substitutions can be checked via _normalise().
+_SEVERE_WORDS: set[str] = {
+    "nigger", "nigga", "faggot", "fag", "retard", "retarded",
+    "tranny", "kike", "spic", "chink", "wetback", "coon",
+}
+
+# Base profanity stems (common English).  We check these ONLY when
+# they appear in directed-hostility patterns — standalone use is mild.
+_PROFANITY_STEMS: set[str] = {
+    "fuck", "shit", "bitch", "ass", "asshole", "bastard",
+    "dick", "crap", "piss", "damn", "hell", "cunt", "whore",
+    "slut", "cock", "bollocks", "twat", "wanker",
+}
+
+# Directed hostility — profanity aimed at the bot.
+# These make the message "severe" even without slurs.
+_DIRECTED_PATTERNS: list[re.Pattern] = [
+    re.compile(p, re.I) for p in [
+        r"(?:fuck|f\*+ck|fk|fuk|f@ck|fu?k|f.ck)\s+(?:you|u|off|this)",
+        r"(?:you(?:'re| are)?|u)\s+(?:a\s+)?(?:stupid|idiot|dumb|useless|garbage|trash|worthless|pathetic|terrible|horrible|worst)",
+        r"(?:you|u)\s+(?:suck|stink|blow)",
+        r"shut\s+(?:the\s+(?:fuck|f\*+ck|f.ck)\s+)?up",
+        r"(?:go\s+)?(?:fuck|f\*+ck|fk|f@ck|f.ck)\s+(?:your|ur)self",
+        r"(?:piece|load)\s+of\s+(?:shit|sh\*t|crap|garbage|trash)",
+        r"(?:die|kill\s+(?:your|ur)self|kys)\b",
+        r"i\s+(?:hate|despise)\s+(?:you|u|this)\b",
+    ]
+]
+
+# Leet-speak / substitution map for normalisation
+_LEET_MAP = str.maketrans({
+    "@": "a", "$": "s", "0": "o", "1": "i", "3": "e",
+    "!": "i", "+": "t", "5": "s",
+})
+
+
+def _normalise(text: str) -> str:
+    """Lower-case and undo common leetspeak substitutions."""
+    return text.lower().translate(_LEET_MAP)
+
+
 class InputValidator:
     """Checks user messages for prompt injection attempts and abusive content."""
 
@@ -149,6 +198,50 @@ class InputValidator:
         )
 
     def check_abuse(self, message: str) -> AbuseResult:
-        """Scan for profanity and directed abuse."""
-        # Placeholder — will be implemented in Task 6
-        return AbuseResult()
+        """Scan for profanity and directed abuse.
+
+        Severity levels:
+          - none:     no profanity detected
+          - mild:     casual swearing not directed at the bot → ALLOW
+          - moderate: general profanity / frustration → ALLOW (log)
+          - severe:   slurs or directed hostility at bot → redirect
+        """
+        normalised = _normalise(message)
+        words = set(re.findall(r"[a-z]+", normalised))
+
+        # Check for slurs first (always severe)
+        if words & _SEVERE_WORDS:
+            logger.warning("Abuse check: severity=severe (slur detected)")
+            return AbuseResult(
+                is_abusive=True,
+                severity="severe",
+                canned_response=_ABUSE_RESPONSE,
+            )
+
+        # Check directed hostility patterns
+        for pattern in _DIRECTED_PATTERNS:
+            if pattern.search(normalised):
+                logger.warning("Abuse check: severity=severe (directed hostility)")
+                return AbuseResult(
+                    is_abusive=True,
+                    severity="severe",
+                    canned_response=_ABUSE_RESPONSE,
+                )
+
+        # Check for general profanity (mild/moderate — never blocked)
+        # Use stem matching so "fucking", "shitty", etc. are caught
+        found_profanity: set[str] = set()
+        for word in words:
+            for stem in _PROFANITY_STEMS:
+                if stem in word:
+                    found_profanity.add(stem)
+                    break
+        if found_profanity:
+            # "moderate" if multiple profane words or strong ones
+            if len(found_profanity) >= 2 or found_profanity & {"fuck", "shit", "cunt"}:
+                logger.info("Abuse check: severity=moderate (general profanity)")
+                return AbuseResult(severity="moderate")
+            # "mild" for casual single swear words
+            return AbuseResult(severity="mild")
+
+        return AbuseResult(severity="none")
