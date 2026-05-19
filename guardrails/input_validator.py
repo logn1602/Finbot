@@ -116,22 +116,53 @@ _ABUSE_RESPONSE = (
 # Severe: slurs and extreme profanity.  Kept as raw stems so common
 # leetspeak substitutions can be checked via _normalise().
 _SEVERE_WORDS: set[str] = {
+    # English
     "nigger", "nigga", "faggot", "fag", "retard", "retarded",
     "tranny", "kike", "spic", "chink", "wetback", "coon",
+    # Hindi / Hinglish (romanised) — severe slurs
+    "madarchod", "madarjaat", "bhenchod", "behenchod",
+    "bhosdike", "bhosdiwale", "bhosdika",
+    "chutiya", "chutiye", "chutiyapa",
+    "randi", "randwa", "randibaaz",
+    "gaandu", "gandu",
+    "haramkhor", "harami", "haramzada", "haramzade",
+    # Tamil (romanised) — severe
+    "thevadiya", "thevidiya", "thevdiya",
+    "otha", "oombu",
+    "sunni", "pundai", "pundek",
+    "myiru", "mayiru",
+    # Spanish — severe
+    "pendejo", "pendeja", "cabron", "cabrona",
+    "puta", "puto", "hijueputa",
+    "verga", "chingada", "culero", "culera",
+    "maricon", "maricona",
 }
 
-# Base profanity stems (common English).  We check these ONLY when
-# they appear in directed-hostility patterns — standalone use is mild.
+# Base profanity stems (common, all languages).  We check these ONLY
+# when they appear in directed-hostility patterns — standalone use is mild.
 _PROFANITY_STEMS: set[str] = {
+    # English
     "fuck", "shit", "bitch", "ass", "asshole", "bastard",
     "dick", "crap", "piss", "damn", "hell", "cunt", "whore",
     "slut", "cock", "bollocks", "twat", "wanker",
+    # Hindi / Hinglish (mild-moderate when standalone)
+    "saala", "saale", "sala", "sale",
+    "kamina", "kamine", "kameena", "kameene",
+    "ullu", "gadha", "bewakoof",
+    "bakwas", "bakwaas",
+    "tatti", "gobar",
+    # Tamil (mild-moderate)
+    "loosu", "kena", "aambala",
+    # Spanish (mild-moderate)
+    "mierda", "cojon", "cojones", "carajo", "joder",
+    "culo", "gilipollas", "idiota",
 }
 
 # Directed hostility — profanity aimed at the bot.
 # These make the message "severe" even without slurs.
 _DIRECTED_PATTERNS: list[re.Pattern] = [
     re.compile(p, re.I) for p in [
+        # English
         r"(?:fuck|f\*+ck|fk|fuk|f@ck|fu?k|f.ck)\s+(?:you|u|off|this)",
         r"(?:you(?:'re| are)?|u)\s+(?:a\s+)?(?:stupid|idiot|dumb|useless|garbage|trash|worthless|pathetic|terrible|horrible|worst)",
         r"(?:you|u)\s+(?:suck|stink|blow)",
@@ -140,6 +171,18 @@ _DIRECTED_PATTERNS: list[re.Pattern] = [
         r"(?:piece|load)\s+of\s+(?:shit|sh\*t|crap|garbage|trash)",
         r"(?:die|kill\s+(?:your|ur)self|kys)\b",
         r"i\s+(?:hate|despise)\s+(?:you|u|this)\b",
+        # Hindi / Hinglish directed at bot
+        r"(?:tu|tum|tere|tera)\s+(?:chutiya|gandu|gadha|ullu|bewakoof|kamina|kameena)",
+        r"(?:abe|abbe|aye)\s+(?:saale|sale|kamina|kameene|chutiye|gandu)",
+        r"(?:bhag|nikal|chal)\s+(?:be|bc|yaha\s+se)",
+        r"(?:teri|tumhari)\s+(?:maa|ma|behen|behan)\b",
+        # Tamil directed at bot
+        r"(?:un|unga|unna)\s+(?:loosu|kena|thevadiya)",
+        r"(?:po|poda|podi)\s+(?:da|di|loosu|kena)",
+        # Spanish directed at bot
+        r"(?:eres|tu\s+eres)\s+(?:un|una)\s+(?:idiota|pendejo|pendeja|inutil|basura|mierda)",
+        r"(?:vete|andate)\s+(?:a\s+la\s+(?:mierda|verga|chingada))",
+        r"(?:callate|callese)\s+(?:la\s+boca|pendejo)?",
     ]
 ]
 
