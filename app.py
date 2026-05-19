@@ -305,6 +305,7 @@ if "user_timezone" not in st.session_state:
 # ── Module imports (post-auth) ─────────────────────────────────
 from brain.llm import FinanceBrain
 from finance.database import BudgetAnalyzer, ChatHistory, ExpenseTracker, now_local
+from guardrails import GuardrailPipeline
 from styles.plotly_theme import trend_layout
 from voice.stt import SpeechToText
 from voice.tts import TextToSpeech
@@ -342,6 +343,11 @@ tracker      = ExpenseTracker()
 analyzer     = BudgetAnalyzer()
 chat_history = ChatHistory()
 
+# ── Guardrails (persisted in session_state for rate limiter) ──
+if "guardrail_pipeline" not in st.session_state:
+    st.session_state.guardrail_pipeline = GuardrailPipeline()
+guardrails = st.session_state.guardrail_pipeline
+
 # ── Session state defaults ─────────────────────────────────────
 if "messages"      not in st.session_state: st.session_state.messages      = _welcome_messages()
 if "pending_audio" not in st.session_state: st.session_state.pending_audio = None
@@ -357,11 +363,29 @@ st.session_state.messages = _strip_stale_breakdowns(st.session_state.messages)
 # ── Core pipeline ──────────────────────────────────────────────
 
 def process_user_input(user_text: str, language: str = None, stt_ms: float = 0.0) -> dict:
+    # ── Guardrail check (runs BEFORE LLM and storage) ─────────
+    session_id = st.session_state.get("user_id", "default")
+    guard_result = guardrails.check_input(user_text, session_id=session_id)
+
+    if not guard_result.passed:
+        # Blocked — return canned response without touching LLM or DB
+        return {
+            "response": guard_result.canned_response,
+            "language": language or "en",
+            "stt_ms": stt_ms,
+            "llm_ms": 0.0,
+            "blocked": True,
+            "blocked_reason": guard_result.blocked_reason,
+        }
+
+    # Use the PII-redacted message from here on
+    safe_text = guard_result.sanitized_message
+
     t0 = time.perf_counter()
     financial_context   = analyzer.generate_context_for_llm()
     historical_context  = analyzer.generate_historical_context_for_llm()
     result              = brain.process_message(
-        user_text, financial_context, language=language,
+        safe_text, financial_context, language=language,
         historical_context=historical_context,
     )
     llm_ms            = (time.perf_counter() - t0) * 1000
@@ -387,7 +411,8 @@ def process_user_input(user_text: str, language: str = None, stt_ms: float = 0.0
                 f"I just logged ${float(amount):,.0f} in {category}. Give a brief confirmation and budget status.",
                 updated_context, language=detected_lang,
             )
-            chat_history.save_message("user",      user_text)
+            # Save PII-redacted text, not original
+            chat_history.save_message("user",      safe_text)
             chat_history.save_message("assistant", response)
             return {"response": response, "language": detected_lang,
                     "stt_ms": stt_ms, "llm_ms": llm_ms}
@@ -402,12 +427,12 @@ def process_user_input(user_text: str, language: str = None, stt_ms: float = 0.0
                 f"I just set the {category} budget to {amount}. Confirm this.",
                 updated_context, language=detected_lang,
             )
-            chat_history.save_message("user",      user_text)
+            chat_history.save_message("user",      safe_text)
             chat_history.save_message("assistant", response)
             return {"response": response, "language": detected_lang,
                     "stt_ms": stt_ms, "llm_ms": llm_ms}
 
-    chat_history.save_message("user",      user_text)
+    chat_history.save_message("user",      safe_text)
     chat_history.save_message("assistant", result["response"])
     return {"response": result["response"], "language": detected_lang,
             "stt_ms": stt_ms, "llm_ms": llm_ms}
@@ -425,12 +450,16 @@ def _dispatch(user_text: str, language: str = None, stt_ms: float = 0.0) -> None
     result     = process_user_input(user_text, language=language, stt_ms=stt_ms)
     audio_path, tts_ms = generate_audio(result["response"], language=result["language"])
 
+    # Show user message in chat (never the raw PII — _dispatch only sees user_text
+    # which is the original, but for blocked messages it doesn't matter since they
+    # aren't stored to Supabase).  For passed messages, Supabase gets the
+    # PII-redacted version via process_user_input.
     st.session_state.messages.append({"role": "user",      "content": user_text,
                                        "language": result["language"]})
     st.session_state.messages.append({"role": "assistant", "content": result["response"]})
     st.session_state.pending_audio = audio_path
     if DEBUG:
-        st.session_state.last_latency = _latency_caption(stt_ms, result["llm_ms"], tts_ms)
+        st.session_state.last_latency = _latency_caption(stt_ms, result.get("llm_ms", 0), tts_ms)
     st.rerun()
 
 

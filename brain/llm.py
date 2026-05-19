@@ -192,6 +192,9 @@ class FinanceBrain:
 
     def classify_intent(self, user_message: str) -> dict:
         """Classify intent + detect language — works regardless of input language."""
+        from guardrails.output_validator import OutputValidator
+        validator = OutputValidator()
+
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -203,16 +206,22 @@ class FinanceBrain:
                 max_tokens=200,
             )
             raw = response.choices[0].message.content.strip()
-            raw = raw.replace("```json", "").replace("```", "").strip()
-            return json.loads(raw)
+            parsed = validator.parse_intent(raw)
+            if parsed.get("_fallback"):
+                print(f"Intent validation used fallback for: {raw[:100]}")
+                parsed.pop("_fallback", None)
+            return parsed
 
-        except (json.JSONDecodeError, Exception) as e:
+        except Exception as e:
             print(f"Intent classification error: {e}")
             return {"intent": "get_advice", "entities": {}, "confidence": 0.3, "language": "en", "time_scope": "current_month"}
 
     def generate_response(self, user_message: str, financial_context: str = "",
                           language: str = "en", rag_context: str = "") -> str:
         """Generate a response in the same language the user spoke in."""
+        from guardrails.output_validator import OutputValidator
+        validator = OutputValidator()
+
         lang_name = LANG_NAMES.get(language, language)
         system_prompt = ADVISOR_PROMPT.render(
             detected_language=lang_name,
@@ -231,6 +240,7 @@ class FinanceBrain:
                 max_tokens=300,
             )
             assistant_reply = response.choices[0].message.content.strip()
+            assistant_reply = validator.validate_response(assistant_reply)
             self.conversation_history.append({"role": "assistant", "content": assistant_reply})
             return assistant_reply
 
