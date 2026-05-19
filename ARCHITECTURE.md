@@ -283,6 +283,49 @@ A period slider (3/6/9/12 months) controls all tabs from a single control.
 
 ---
 
+## Guardrails Architecture
+
+### Why local regex over paid moderation APIs?
+
+OpenAI's moderation endpoint and Google's Perspective API provide superior detection of harmful content, but both are paid or rate-limited services. The zero-cost constraint rules them out. Regex-based PII detection catches 95%+ of common patterns (credit cards, SSNs, Aadhaar, PAN, etc.) at zero cost and near-zero latency (<5ms). The trade-off is that novel or obfuscated PII patterns may slip through, but for a financial assistant the primary risk is structured data (card numbers, account numbers) which regex handles well.
+
+### Why severity-based abuse handling?
+
+Blocking all profanity alienates frustrated users. A user saying "this is bullshit, I overspent again" is expressing genuine frustration about their finances — blocking them would be hostile and counterproductive. The severity system distinguishes between:
+
+- **Mild** (casual swearing) — passes through completely, no intervention
+- **Moderate** (strong language) — passes through, logged for observability
+- **Severe** (slurs or directed hostility at the bot) — redirected with a calm de-escalation message
+
+This mirrors how a human financial advisor would react: ignore the language, focus on the financial need.
+
+### Why output validation matters for a finance app
+
+A malformed intent classification that logs a $5,000 expense instead of $50 is a data corruption bug that is invisible to the user until they check their dashboard. Pydantic models enforce type constraints (amount must be a float, intent must be a known value, category must be from the valid set) before any database write occurs. When validation fails, the system falls back to a greeting intent which triggers no database operations — a safe default.
+
+### Pipeline ordering
+
+```
+INPUT SIDE (before LLM):                OUTPUT SIDE (after LLM):
+  1. Rate limiting                        1. Intent JSON → Pydantic validation
+  2. Prompt injection detection            2. Response text → markdown stripping
+  3. Profanity / abuse detection
+  4. Scope enforcement
+  5. PII redaction
+```
+
+Input guardrails protect the LLM and database. Output guardrails protect the user. PII redaction runs last on the input side so that blocked messages (injection, abuse, scope) short-circuit before the regex scan runs — a minor performance optimization.
+
+The critical invariant: **PII-redacted text is what gets saved to Supabase**, never the original. The raw message exists only in the current request's memory and is discarded after processing.
+
+### Rate limiting design
+
+In-memory sliding window using timestamp lists, keyed by session ID. Why not Redis: the zero-cost constraint prohibits external infrastructure, and in-memory storage is sufficient because limits reset on redeploy (acceptable) and aggressive abuse would trigger Streamlit Cloud's own connection limits before exhausting FinBot's rate limiter.
+
+The rate limiter state lives in `st.session_state` so it survives Streamlit reruns within a session but resets on page refresh or redeploy.
+
+---
+
 ## What Was Deliberately Not Built
 
 - **Streaming responses** — Streamlit's `st.write_stream()` is available, but streaming conflicts with the TTS step (you can't synthesise audio until the full response is known). A future architecture could stream text first, then generate audio for the complete response.

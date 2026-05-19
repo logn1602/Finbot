@@ -89,6 +89,7 @@ flowchart TD
 | ⚠️ Budget Alerts | Flags categories as `OVER` / `WARNING` / `ON TRACK` with calendar-month projections |
 | 💬 Conversation Memory | Retains last 20 messages for coherent multi-turn dialogue |
 | 🔒 Multi-user Auth | Supabase authentication with row-level security — every query is scoped to the logged-in user |
+| 🛡️ Safety & Guardrails | PII auto-redaction, prompt injection defense, scope enforcement, abuse handling, output validation, rate limiting — all local regex, zero cost, <50ms |
 | 💸 Zero Cost | Groq (free) + Supabase (free) + Edge-TTS (free) + Streamlit Cloud (free) |
 
 ---
@@ -124,6 +125,13 @@ Finbot/
 ├── voice/
 │   ├── stt.py                 # Speech-to-text (Groq Whisper + local offline fallback)
 │   └── tts.py                 # Text-to-speech (Edge-TTS, async, 20+ language voices)
+├── guardrails/                # Safety & guardrails layer
+│   ├── pipeline.py            # Orchestrates all input/output checks in sequence
+│   ├── pii.py                 # PII detection & redaction (9 pattern types, span-based)
+│   ├── input_validator.py     # Prompt injection defense + profanity/abuse handling
+│   ├── output_validator.py    # Pydantic validation for intent JSON + response cleanup
+│   ├── scope.py               # Off-topic detection with finance keyword allowlist
+│   └── rate_limiter.py        # Per-session sliding-window rate limiting
 ├── dashboard/                 # Historical spending dashboard
 │   ├── charts.py              # 5 Plotly chart functions (bar, stacked, trend, heatmap, drilldown)
 │   └── ui.py                  # Streamlit UI — 3-tab collapsible panel with period selector
@@ -148,7 +156,8 @@ Finbot/
 │   ├── test_database.py       # Financial context generation tests
 │   ├── test_tts.py            # Voice selection tests
 │   ├── test_rag.py            # Embedding, retriever, chunking, ingestion tests (25 tests)
-│   └── test_historical.py     # Month scoping, historical queries, time scope, charts (41 tests)
+│   ├── test_historical.py     # Month scoping, historical queries, time scope, charts (41 tests)
+│   └── test_guardrails.py     # PII, output validation, scope, injection, abuse, rate limiting (75 tests)
 └── ARCHITECTURE.md            # Design decisions and trade-off rationale
 ```
 
@@ -278,6 +287,19 @@ python -m evals.run_eval --verbose
 # Run unit tests
 python -m pytest tests/test_rag.py -v
 ```
+
+---
+
+## Safety & Guardrails
+
+FinBot includes a production-grade safety layer that runs on every message with <50ms overhead and zero external API costs:
+
+- **PII Redaction** — credit cards, SSNs, Aadhaar, PAN, bank accounts, phone numbers, emails, and SWIFT/IFSC codes are automatically stripped before reaching the LLM or database. Financial amounts ($500, 450) are preserved.
+- **Prompt Injection Defense** — pattern-matched risk scoring blocks instruction overrides, role hijacking, jailbreak attempts, and system prompt extraction. Partial matches are logged but not blocked to avoid false positives.
+- **Scope Enforcement** — off-topic queries (poems, jokes, homework, weather) are detected and redirected. Finance keywords in 4 languages plus a permissive default ensure legitimate questions are never blocked.
+- **Profanity & Abuse Handling** — severity-based: casual swearing passes through (frustrated users are still legitimate users), only directed hostility or slurs trigger a calm de-escalation redirect. Supports English, Hindi, Tamil, and Spanish.
+- **Output Validation** — Pydantic models validate every intent classification from the LLM. Malformed JSON, missing fields, or invalid intents fall back safely to a greeting (no database writes). Response text is stripped of any leaked markdown.
+- **Rate Limiting** — per-session sliding window (15/min, 100/hour) prevents API abuse without external infrastructure.
 
 ---
 
